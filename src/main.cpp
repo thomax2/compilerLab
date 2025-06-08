@@ -7,6 +7,7 @@
 #include <streambuf>
 #include "ast.hpp"
 #include "koopa.h"
+#include "rsicv.h"
 
 using namespace std;
 
@@ -32,12 +33,17 @@ int main(int argc, const char *argv[]) {
   koopa_raw_program_t raw_prog = *(koopa_raw_program_t *)ast->Koop();
   ast.release();
 
-  koopa_program_t prog;
-  koopa_error_code_t err = koopa_generate_raw_to_koopa(&raw_prog,&prog);
-  assert(err == KOOPA_EC_SUCCESS);
+  if( std::string(mode) == "-koopa") {
+    koopa_program_t prog;
+    koopa_error_code_t err = koopa_generate_raw_to_koopa(&raw_prog,&prog);
+    assert(err == KOOPA_EC_SUCCESS);
 
-  koopa_dump_to_file(prog, output);
-  koopa_delete_program(prog);
+    koopa_dump_to_file(prog, output);
+    koopa_delete_program(prog);
+  } else {
+    BaseRSICV riscv(output);
+    riscv.build(raw_prog);
+  }
 
   return 0;
 }
