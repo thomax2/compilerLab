@@ -3,7 +3,10 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <fstream>
+#include <streambuf>
 #include "ast.hpp"
+#include "koopa.h"
 
 using namespace std;
 
@@ -26,8 +29,15 @@ int main(int argc, const char *argv[]) {
   assert(!ret);
 
 
-  // dump AST
-  ast->Dump();
-  cout << endl;
+  koopa_raw_program_t raw_prog = *(koopa_raw_program_t *)ast->Koop();
+  ast.release();
+
+  koopa_program_t prog;
+  koopa_error_code_t err = koopa_generate_raw_to_koopa(&raw_prog,&prog);
+  assert(err == KOOPA_EC_SUCCESS);
+
+  koopa_dump_to_file(prog, output);
+  koopa_delete_program(prog);
+
   return 0;
 }

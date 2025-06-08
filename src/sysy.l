@@ -16,6 +16,8 @@ using namespace std;
 /* 空白符和注释 */
 WhiteSpace [ \r\t\n]*
 LineComment "//".*
+LineComment2 "/*"([^*]|\*+[^*/])*"*"+"/"
+
 
 /* 标识符 */
 Identifier [a-zA-Z_][a-zA-Z0-9_]*
@@ -30,6 +32,7 @@ Hexadecimal 0[xX][a-fA-F0-9]+
 
 {WhiteSpace} {}
 {LineComment} {}  
+{LineComment2} {}
 
 "int" {return INT;}
 "return" {return RETURN;}
