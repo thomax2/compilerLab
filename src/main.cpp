@@ -13,12 +13,13 @@ using namespace std;
 
 extern FILE *yyin;
 extern int yyparse(std::unique_ptr<BaseAST> &ast);
-
+extern int yydebug;
 int main(int argc, const char *argv[]) {
   assert(argc == 5);
   auto mode = argv[1];
   auto input = argv[2];
   auto output = argv[4];
+  // yydebug = 1;
 
   // 打开输入文件, 并且指定 lexer 在解析的时候读取这个文件
   yyin = fopen(input, "r");

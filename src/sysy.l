@@ -27,6 +27,9 @@ Decimal [1-9][0-9]*
 Octal   0[0-7]*
 Hexadecimal 0[xX][a-fA-F0-9]+
 
+RelOp   [<>]=?
+EqOp    [!=]=
+
 %%
 
 
@@ -37,11 +40,17 @@ Hexadecimal 0[xX][a-fA-F0-9]+
 "int" {return INT;}
 "return" {return RETURN;}
 
+"||"            { yylval.str_val = new string(yytext); return OR; }
+"&&"            { yylval.str_val = new string(yytext); return AND; }
+
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 
 {Decimal}       { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
 {Octal}         { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
 {Hexadecimal}   { yylval.int_val = strtol(yytext, nullptr, 0); return INT_CONST; }
+
+{RelOp}         { yylval.str_val = new string(yytext); return RELOP; }
+{EqOp}          { yylval.str_val = new string(yytext); return EQOP; }
 
 .               { return yytext[0]; }
 

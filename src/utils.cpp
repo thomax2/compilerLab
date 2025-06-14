@@ -17,4 +17,14 @@ koopa_raw_slice_t slice(std::vector<const void *> &vec, koopa_raw_slice_item_kin
     return ret;
 }
 
+koopa_raw_slice_t slice(const void *value, koopa_raw_slice_item_kind_t kind) {
+    koopa_raw_slice_t ret;
+    
+    ret.len = 1;
+    ret.buffer = new const void *[1];
+    ret.buffer[0] = value;
+    ret.kind = kind;
+
+    return ret;
+}
 
