@@ -28,3 +28,15 @@ koopa_raw_slice_t slice(const void *value, koopa_raw_slice_item_kind_t kind) {
     return ret;
 }
 
+koopa_raw_type_t type_kind(koopa_raw_type_tag_t tag) {
+    koopa_raw_type_kind_t *ret = new koopa_raw_type_kind_t();
+    ret->tag = tag;
+    return (koopa_raw_type_t)ret;
+  }
+  
+  koopa_raw_type_t pointer_type_kind(koopa_raw_type_tag_t tag) {
+    koopa_raw_type_kind_t *ret = new koopa_raw_type_kind_t();
+    ret->tag = KOOPA_RTT_POINTER;
+    ret->data.pointer.base = type_kind(tag); 
+    return (koopa_raw_type_t)ret;
+  }

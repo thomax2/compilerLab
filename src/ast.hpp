@@ -5,10 +5,12 @@
 #include <vector>
 #include <cassert>
 #include "utils.h"
+#include "symbol.h"
 
 using namespace std;
 
-
+static SymbolList sym_list;
+// static SymbolList ;
 
 class BaseAST
 {
@@ -24,6 +26,8 @@ class BaseAST
         virtual void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const {
             return nullptr;
         }
+
+        virtual int Calcu() const { return 0; }
 };
 
 class CompUnitAST : public BaseAST {
@@ -69,18 +73,20 @@ class FuncTypeAST : public BaseAST {
 
 class BlockAST : public BaseAST {
     public:
-        std::unique_ptr<BaseAST> stmt;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> blist;
 
-        void Dump() const override {
-            std::cout << "\%entry:\n";
-            stmt->Dump();
-        }
+        void Dump() const override {}
+
         void* Koop() const override;
 };
 
+
 class StmtAST : public BaseAST {
     public:
+        enum {EXP, VAL} type;
         std::unique_ptr<BaseAST> expr;
+        std::unique_ptr<BaseAST> lval;
+
 
         void Dump() const override {
             std::cout << "\tret ";
@@ -88,7 +94,7 @@ class StmtAST : public BaseAST {
             std::cout << "\n";
         }
         // void* Koop() const override;
-        void* Koop(std::vector<const void*>& insts) const override;
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
 };
 
 class NumberAST : public BaseAST {
@@ -100,6 +106,7 @@ class NumberAST : public BaseAST {
         }
         // void* Koop() const override;
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 
@@ -110,6 +117,7 @@ class ExpAST : public BaseAST {
         void Dump() const override{}
         // void* Koop() const override;
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 class PrimaryExpAST : public BaseAST {
@@ -119,6 +127,16 @@ class PrimaryExpAST : public BaseAST {
         void Dump() const override{}
         // void* Koop() const override;
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
+};
+
+class LValAST : public BaseAST {
+    public:
+        std::string ident;
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        void* Koop() const override;
+        int Calcu() const override;
 };
 
 class UnaryExpAST : public BaseAST {
@@ -131,6 +149,7 @@ class UnaryExpAST : public BaseAST {
         void Dump() const override{}
         // void* Koop() const override;
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 
@@ -151,6 +170,7 @@ class MulExpAST : public BaseAST {
         std::unique_ptr<BaseAST> uexp;
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 class AddExpAST : public BaseAST {
@@ -163,7 +183,7 @@ class AddExpAST : public BaseAST {
 
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
-
+        int Calcu() const override;
 };
 
 class RelExpAST : public BaseAST {
@@ -176,6 +196,7 @@ class RelExpAST : public BaseAST {
 
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 class EqExpAST : public BaseAST {
@@ -188,6 +209,7 @@ class EqExpAST : public BaseAST {
 
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+        int Calcu() const override;
 };
 
 class LAndExpAST : public BaseAST {
@@ -199,7 +221,7 @@ class LAndExpAST : public BaseAST {
 
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
-        // void* Int2bool(koopa_raw_slice_t used_by, std::vector<const void*>& insts, const std::unique_ptr<BaseAST> &exp) const;
+        int Calcu() const override;
 };
 
 class LOrExpAST : public BaseAST {
@@ -211,7 +233,60 @@ class LOrExpAST : public BaseAST {
 
         void Dump() const override{}
         void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
-        // void* Int2bool(koopa_raw_slice_t used_by, std::vector<const void*>& insts, std::unique_ptr<BaseAST> exp) const;
+        int Calcu() const override;
 };
 
 
+// class DeclAST : public BaseAST {
+//     public:
+//         std::unique_ptr<BaseAST> cdecl;
+//         void Dump() const override{}
+// };
+
+
+class ConstDeclAST : public BaseAST {
+    public:
+        std::unique_ptr<BaseAST> btype;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> clist;
+        
+        
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
+
+class BTypeAST : public BaseAST {
+    public:
+        std::string btype;
+
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
+class ConstDefAST : public BaseAST {
+    public:
+        std::string ident;
+        std::unique_ptr<BaseAST> cival;
+
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
+class VarDeclAST : public BaseAST {
+    public:
+        std::unique_ptr<BaseAST> btype;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> vlist;
+
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
+class VarDefAST : public BaseAST {
+    public:
+        enum {IDE, VAL} type;
+        std::string ident;
+        std::unique_ptr<BaseAST> ival;
+        
+        void Dump() const override{}
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};

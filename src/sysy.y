@@ -31,19 +31,24 @@ using namespace std;
     std::string *str_val;
     int int_val;
     BaseAST *ast_val;
+    std::vector<std::unique_ptr<BaseAST>> *ast_vec;
 }
 
 // INT RETURN just token symbol, other which have <xxxx> means have value in yylval.xxxx 
 // lexer 返回的所有 token 种类的声明
 
-%token INT RETURN
+%token INT RETURN CONST
 %token <str_val> IDENT RELOP EQOP OR AND
 %token <int_val> INT_CONST 
 
 // 非终结符的类型定义
 %type <ast_val> FuncDef FuncType Block Stmt Number
 %type <ast_val> Exp PrimaryExp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
-%type <str_val> UnaryOp AddOp MulOp
+%type <ast_val> LVal Decl ConstDecl ConstDef ConstExp ConstInitVal BlockItem BType
+%type <ast_val> VarDecl VarDef InitVal
+%type <str_val> UnaryOp AddOp MulOp 
+%type <ast_vec> BlockList ConstList VarList
+
 %%
 
 // complier unit, ast = "FuncDef", FuncDef decompoised in later context
@@ -80,17 +85,43 @@ FuncType
 // IDENT is token not need rule
 
 Block
-    : '{' Stmt '}' {
+    : '{' BlockList '}' {
         auto ast = new BlockAST();
-        ast->stmt = unique_ptr<BaseAST>($2);
+        ast->blist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
         $$ = ast;
     }
     ;
 
+BlockList
+    : BlockItem BlockList {
+        auto blist = (vector<std::unique_ptr<BaseAST>>*)($2);
+        auto bitem = std::unique_ptr<BaseAST>($1);
+        blist->push_back(std::move(bitem));
+        $$ = blist;
+    } |
+    BlockItem {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto bitem = std::unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(bitem));
+        $$ = vec;
+    }
+    ;
+
+BlockItem : Decl | Stmt;
+
+
 Stmt
     : RETURN Exp ';' {
         auto ast = new StmtAST();
+        ast->type = StmtAST::EXP;
         ast->expr = unique_ptr<BaseAST>($2);
+        $$ = ast;
+    } |
+    LVal '=' Exp ';' {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::VAL;
+        ast->expr = unique_ptr<BaseAST>($3);
+        ast->lval = unique_ptr<BaseAST>($1);
         $$ = ast;
     }
     ;
@@ -117,9 +148,22 @@ PrimaryExp
         ast->expr = unique_ptr<BaseAST>($2);
         $$ = ast;
     } | 
+    LVal {
+        auto ast = new PrimaryExpAST();
+        ast->expr = unique_ptr<BaseAST>($1);
+        $$ = ast;
+    } |
     Number {
         auto ast = new PrimaryExpAST();
         ast->expr = unique_ptr<BaseAST>($1);
+        $$ = ast;
+    }
+    ;
+
+LVal
+    : IDENT {
+        auto ast = new LValAST();
+        ast->ident = *unique_ptr<string>($1);
         $$ = ast;
     }
     ;
@@ -276,10 +320,101 @@ LOrExp
     ;
 
 
+Decl : ConstDecl | VarDecl;
+
+ConstDecl
+    : CONST BType ConstList ';' {
+        auto ast = new ConstDeclAST();
+        ast->btype = unique_ptr<BaseAST>($2);
+        ast->clist = unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($3);
+        $$ = ast;
+    }
+    ;
+
+
+ConstList
+    : ConstList ',' ConstDef {
+        auto vec = (vector<std::unique_ptr<BaseAST>>*)($1);
+        auto cdef = unique_ptr<BaseAST>($3);
+        vec->push_back(std::move(cdef));
+        $$ = vec;
+    }
+    | ConstDef {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto cdef = unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(cdef));
+        $$ = vec;
+    }
+    ;
+    
+BType
+    : INT {
+        auto ast = new BTypeAST();
+        ast->btype = "int";
+        $$ = ast;
+    }
+    ;
+
+ConstDef
+    : IDENT '=' ConstInitVal {
+        auto ast = new ConstDefAST();
+        ast->ident = *unique_ptr<string>($1);
+        ast->cival = unique_ptr<BaseAST>($3);
+        $$ = ast;
+    }
+    ;
+
+ConstInitVal : ConstExp;
+
+ConstExp : Exp;
+
+VarDecl
+    : BType VarList ';' {
+        auto ast = new VarDeclAST();
+        ast->btype = unique_ptr<BaseAST>($1);
+        ast->vlist = unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
+        $$ = ast;
+    }
+    ;
+
+VarList
+    : VarDef ',' VarList {
+        auto vec = (vector<std::unique_ptr<BaseAST>>*)($3);
+        auto vdef = unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(vdef));
+        $$ = vec;
+    } |
+    VarDef {
+        auto vec = new vector<std::unique_ptr<BaseAST>>;
+        auto vdef = unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(vdef));
+        $$ = vec;
+    }
+    ;
+
+VarDef
+    : IDENT {
+        auto ast = new VarDefAST();
+        ast->type = VarDefAST::IDE;
+        ast->ident = *unique_ptr<string>($1);
+        $$ = ast;
+    } |
+    IDENT '=' InitVal {
+        auto ast = new VarDefAST();
+        ast->type = VarDefAST::VAL;
+        ast->ident = *unique_ptr<string>($1);
+        ast->ival = unique_ptr<BaseAST>($3);
+        $$ = ast;
+    }
+    ;
+
+InitVal : Exp;
+
 
 %%
 
 void yyerror(std::unique_ptr<BaseAST> &ast, const char* s) {
     cerr << "error:" << s << endl;
 }
+
 

@@ -1,6 +1,6 @@
 #include "rsicv.h"
 
-void BaseRSICV::Reg::reg_init() {
+void BaseRSICV::Env::reg_init() {
     for(size_t i = 0; i< 8; i++) {
         reg_status_map[ "t" + std::to_string(i) ] = UNUSED;
         if(i != 7)
@@ -10,7 +10,7 @@ void BaseRSICV::Reg::reg_init() {
 
 
 // alloc arbitrary reg to value
-std::string BaseRSICV::Reg::reg_alloc(koopa_raw_value_t value) {
+std::string BaseRSICV::Env::reg_alloc(koopa_raw_value_t value) {
     if( reg_insts_map.find(value) != reg_insts_map.end() ) {
         return reg_insts_map[value];
     }
@@ -21,7 +21,6 @@ std::string BaseRSICV::Reg::reg_alloc(koopa_raw_value_t value) {
             reg_insts_map[value] = "t" + std::to_string(i);
             return "t" + std::to_string(i);
         }
-        
     }
     
     for (size_t i = 0; i < 7; i++) {
@@ -37,30 +36,46 @@ std::string BaseRSICV::Reg::reg_alloc(koopa_raw_value_t value) {
 
 
 // alloc certain reg to value
-std::string BaseRSICV::Reg::reg_load(koopa_raw_value_t value, std::string reg) {
+std::string BaseRSICV::reg_load(koopa_raw_value_t value, std::string reg) {
     // assert(reg_status_map[reg] == UNUSED);
     std::string ret = "";
-
     // find
-    if(reg_insts_map.find(value) != reg_insts_map.end()) {
-        if(value->kind.tag == KOOPA_RVT_INTEGER) {
-            ret += "\tli " + reg + ", " + std::to_string(value->kind.data.integer.value) + "\n";
-        } else if (reg_insts_map[value] != reg) {
-            ret += "\tmv " + reg + ", " + reg_insts_map[value] + "\n";
-        }
+    if(value->kind.tag == KOOPA_RVT_INTEGER) {
+        ret += "\tli " + reg + ", " + std::to_string(value->kind.data.integer.value) + "\n";
     } else {
-        if(value->kind.tag == KOOPA_RVT_INTEGER) {
-            ret += "\tli " + reg + ", " + std::to_string(value->kind.data.integer.value) + "\n";
-        } else {
-            // std::cout << std::to_string(value->kind.tag) << std::endl;
-            // assert(false);
-        }
+        int offset = env.get_offset(value);
+        ret += "\tlw " + reg + ", " + std::to_string(offset) + "(sp)\n";
     }
     return ret;
 }
 
-void BaseRSICV::Reg::reg_free(std::string reg) {
+void BaseRSICV::Env::reg_free(std::string reg) {
     reg_status_map[reg] = UNUSED;
+}
+
+void BaseRSICV::Env::stack_init(int size) {
+    stack_size = size;
+    cur_offset = 0;
+    stack_offset_map.clear();
+}
+
+int BaseRSICV::Env::get_offset(koopa_raw_value_t value) {
+    assert(value != nullptr);
+    if(stack_offset_map.find(value) != stack_offset_map.end())
+        return stack_offset_map[value];
+    else {
+        stack_offset_map[value] = cur_offset;
+        cur_offset += 4;
+        return stack_offset_map[value];
+    }
+    return -1;
+}
+
+std::string BaseRSICV::store_offset(int addr, std::string reg) {
+    std::string ret = "";
+    ret += "\tsw " + reg + ", " + std::to_string(addr) + "(sp)\n";
+
+    return ret;
 }
 
 
@@ -123,14 +138,31 @@ std::string BaseRSICV::Visit(const koopa_raw_function_t &func) {
 }
 
 std::string BaseRSICV::Visit(const koopa_raw_basic_block_t &block) {
-    return Visit(block->insts);
+    std::string ret = "";
+    // std::cout << "len::" << std::to_string(block->insts.len) << std::endl;
+    int sub_sp = 0;
+    for(int i = 0; i<(block->insts.len); i++) {
+        koopa_raw_value_data * inst = (koopa_raw_value_data *)block->insts.buffer[i];
+        // std::cout << "tag::" << std::to_string(inst->kind.tag) << std::endl;
+        if(inst->kind.tag == KOOPA_RVT_ALLOC || inst->kind.tag == KOOPA_RVT_LOAD || 
+                inst->kind.tag == KOOPA_RVT_BINARY)
+            sub_sp++;
+    }
+    sub_sp = sub_sp*4;
+    if(sub_sp % 16 != 0)
+        sub_sp += 16 - (sub_sp % 16);
+    env.stack_init(sub_sp);
+    ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+    ret += Visit(block->insts);
+    return ret;
 }
 
 // 访问指令
 std::string BaseRSICV::Visit(const koopa_raw_value_t &value) {
     std::string ret = "";
     const auto &kind = value->kind;
-
+    current_inst = value;
+    
     switch (kind.tag)
     {
     case KOOPA_RVT_INTEGER:
@@ -138,16 +170,23 @@ std::string BaseRSICV::Visit(const koopa_raw_value_t &value) {
         break;
     
     case KOOPA_RVT_BINARY:
-        current_inst = value;
         ret += Visit(kind.data.binary);
         break;
 
     case KOOPA_RVT_RETURN:
-        current_inst = value;
         ret += Visit(kind.data.ret);
         break;
 
-    // TODO
+    case KOOPA_RVT_ALLOC:
+        break;
+
+    case KOOPA_RVT_LOAD:
+        ret += Visit(kind.data.load);
+        break;
+
+    case KOOPA_RVT_STORE:
+        ret += Visit(kind.data.store);
+        break;
 
     default:
         break;
@@ -162,25 +201,14 @@ std::string BaseRSICV::Visit(const koopa_raw_integer_t &interger) {
 
 std::string BaseRSICV::Visit(const koopa_raw_binary_t &binary) {
     std::string ret = "";
+    
+    std::string rd = "t0";
+    std::string rs1 = "t0";
+    std::string rs2 = "t1";
+    int addr = env.get_offset(current_inst);
 
-    auto rd = reg_mem.reg_alloc((koopa_raw_value_data_t *)current_inst);
-
-    std::string rs1;
-    std::string rs2;
-
-    if(binary.lhs->kind.tag == KOOPA_RVT_INTEGER && binary.lhs->kind.data.integer.value == 0) {
-        rs1 = "x0";
-    } else {
-        rs1 = reg_mem.reg_alloc(binary.lhs);
-        ret += reg_mem.reg_load(binary.lhs, rs1);
-    }
-
-    if(binary.rhs->kind.tag == KOOPA_RVT_INTEGER && binary.rhs->kind.data.integer.value == 0) {
-        rs2 = "x0";
-    } else {
-        rs2 = reg_mem.reg_alloc(binary.rhs);
-        ret += reg_mem.reg_load(binary.rhs, rs2);
-    }
+    ret += reg_load(binary.lhs, rs1);
+    ret += reg_load(binary.rhs, rs2);
 
     switch (binary.op)
     {
@@ -247,13 +275,7 @@ std::string BaseRSICV::Visit(const koopa_raw_binary_t &binary) {
     default:
         break;
     }
-    if (rs1 != "Null" && rs1 != "x0" && rs1 != rd) {
-        reg_mem.reg_free(rs1);
-    }
-    if (rs2 != "Null" && rs2 != "x0" && rs2 != rd) {
-        reg_mem.reg_free(rs2);
-    }
-
+    ret += store_offset(addr, rd);
     return ret;
 }
 
@@ -261,11 +283,33 @@ std::string BaseRSICV::Visit(const koopa_raw_binary_t &binary) {
 std::string BaseRSICV::Visit(const koopa_raw_return_t &raw) {
     std::string ret = "";
 
-    // ret += "\tli a0, ";
-    // ret += Visit(raw.value);
-    // ret += "\n\tret\n";
-    ret += reg_mem.reg_load(raw.value, "a0");
+    // int offset = env.get_offset(raw.value);
+    ret += reg_load(raw.value, "a0");
+    ret += "\tadd sp, sp, " + std::to_string(env.stack_size) + "\n";
     ret += "\tret\n";
     return ret;
 }
+
+std::string BaseRSICV::Visit(const koopa_raw_load_t &load) {
+    std::string ret = "";
+    std::string rd = "t0";
+    int addr = env.get_offset(current_inst);
+
+    ret += reg_load(load.src, rd);
+    ret += store_offset(addr, rd);
+    return ret;
+}
+
+
+std::string BaseRSICV::Visit(const koopa_raw_store_t &store) {
+    std::string ret = "";
+    std::string rd = "t0";
+    int addr = env.get_offset(store.dest);
+
+    ret += reg_load(store.value, rd);
+    ret += store_offset(addr, rd);
+    
+    return ret;
+}
+
 
