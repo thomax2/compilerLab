@@ -78,12 +78,13 @@ class BlockAST : public BaseAST {
         void Dump() const override {}
 
         void* Koop() const override;
+        void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
 };
 
 
 class StmtAST : public BaseAST {
     public:
-        enum {EXP, VAL} type;
+        enum {RET, VAL, EXP, BLOCK} type;
         std::unique_ptr<BaseAST> expr;
         std::unique_ptr<BaseAST> lval;
 

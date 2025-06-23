@@ -89,6 +89,11 @@ Block
         auto ast = new BlockAST();
         ast->blist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
         $$ = ast;
+    } |
+    '{' '}' {
+        auto ast = new BlockAST();
+        ast->blist = nullptr;
+        $$ = ast;
     }
     ;
 
@@ -113,7 +118,7 @@ BlockItem : Decl | Stmt;
 Stmt
     : RETURN Exp ';' {
         auto ast = new StmtAST();
-        ast->type = StmtAST::EXP;
+        ast->type = StmtAST::RET;
         ast->expr = unique_ptr<BaseAST>($2);
         $$ = ast;
     } |
@@ -123,8 +128,32 @@ Stmt
         ast->expr = unique_ptr<BaseAST>($3);
         ast->lval = unique_ptr<BaseAST>($1);
         $$ = ast;
+    } | 
+    Exp ';' {
+        auto ast = new StmtAST();
+        ast->expr = unique_ptr<BaseAST>($1);
+        ast->type = StmtAST::EXP;
+        $$ = ast;
+    } |
+    ';' {
+        auto ast = new StmtAST();
+        ast->expr = nullptr;
+        $$ = ast;
+    } |
+    Block {
+        auto ast = new StmtAST();
+        ast->expr = unique_ptr<BaseAST>($1);
+        ast->type = StmtAST::BLOCK;
+        $$ = ast;
+    } |
+    RETURN ';' {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::RET;
+        ast->expr = nullptr;
+        $$ = ast;
     }
     ;
+
 
 Number
     : INT_CONST {

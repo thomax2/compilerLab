@@ -45,8 +45,8 @@ void* FuncTypeAST::Koop() const {
 
 void* BlockAST::Koop() const {
     koopa_raw_basic_block_data_t *ret = new koopa_raw_basic_block_data_t();
-    std::unique_ptr<SymbolList> sym_list = std::make_unique<SymbolList>();
-    sym_list->list_init();
+    sym_list.list_new();
+
     // std::vector<const void *> insts{stmt->Koop()};
     std::vector<const void *> insts;
     // blist->Koop(insts);
@@ -70,7 +70,27 @@ void* BlockAST::Koop() const {
     ret->params = slice(KOOPA_RSIK_VALUE);
     ret->used_by = slice(KOOPA_RSIK_VALUE);
 
+    sym_list.list_del();
     return ret;
+}
+
+void* BlockAST::Koop(koopa_raw_slice_t b, std::vector<const void *> &insts) const {
+    if(blist == nullptr) 
+        return nullptr;
+
+    sym_list.list_new();
+
+    for(auto bitem = blist->end() - 1; bitem > blist->begin() - 1; bitem--) {
+        (koopa_raw_value_t)(*bitem)->Koop(slice(KOOPA_RSIK_VALUE),insts);
+        if (insts.size() > 0) {
+            auto inst = (koopa_raw_value_t)insts.back();
+            if (inst->kind.tag == KOOPA_RVT_RETURN) {
+              break;
+            }
+        }
+    }
+    sym_list.list_del();
+    return nullptr;
 }
 
 void* StmtAST::Koop(koopa_raw_slice_t b, std::vector<const void *> &insts) const {
@@ -81,18 +101,26 @@ void* StmtAST::Koop(koopa_raw_slice_t b, std::vector<const void *> &insts) const
     ret->ty = type_kind(KOOPA_RTT_UNIT);
     ret->used_by = slice(KOOPA_RSIK_VALUE);
 
-    if(type == EXP) {
-        ret->kind.tag = KOOPA_RVT_RETURN;
-        ret->kind.data.ret.value = (const koopa_raw_value_data_t *)expr->Koop(used_by, insts);    
-    } else if(type == VAL) {
-        ret->kind.tag = KOOPA_RVT_STORE;
-        ret->kind.data.store.value = (const koopa_raw_value_data_t *)expr->Koop(used_by, insts);
-        ret->kind.data.store.dest = (const koopa_raw_value_data_t *)lval->Koop();
-    } else {
-        assert(false);
+    if( expr != nullptr ) {
+        if(type == RET) {
+            ret->kind.tag = KOOPA_RVT_RETURN;
+            if(expr != nullptr)
+                ret->kind.data.ret.value = (const koopa_raw_value_data_t *)expr->Koop(used_by, insts);  
+            insts.push_back(ret);  
+        } else if(type == VAL) {
+            ret->kind.tag = KOOPA_RVT_STORE;
+            ret->kind.data.store.value = (const koopa_raw_value_data_t *)expr->Koop(used_by, insts);
+            ret->kind.data.store.dest = (const koopa_raw_value_data_t *)lval->Koop();
+            insts.push_back(ret);
+        } else if(type == EXP) {
+            expr->Koop(b, insts); //dont know 
+        } else if(type == BLOCK) {
+            expr->Koop(b, insts);
+        } else {
+            assert(false);
+        }    
     }
 
-    insts.push_back(ret);
     return ret;
 }
 
@@ -521,8 +549,9 @@ void* VarDefAST::Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts
     koopa_raw_value_data *ret = new koopa_raw_value_data();
     koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
 
-    char *name = new char[ident.length() + 1];
-    ("@" + ident).copy(name, ident.length()+1);
+    char *name = new char[ident.length() + 1 + 2];
+    ("@" + ident + "_" + std::to_string(sym_list.cur_depth())).copy(name, ident.length()+1+2);
+    // ("@" + ident + "_" + std::to_string(sym_list.cur_depth())).copy(name, ident.length()+1+2);
     ret->name = name;
     ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
     ret->used_by = used;

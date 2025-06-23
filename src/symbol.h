@@ -22,14 +22,17 @@ struct Symbol {
 class SymbolList
 {
 private:
-    std::map<std::string, Symbol> sym_list;
+    std::vector<std::map<std::string, Symbol>> sym_list_vec;
 
 public:
     ~SymbolList() = default;
 
     void list_add(std::string ident, Symbol data);
     Symbol list_get(std::string ident);
-    void list_init();
+    void list_new();
+    void list_del();
+    // void list_init();
+    int cur_depth();
 };
 
 
