@@ -2,6 +2,7 @@
 #include <fstream>
 #include <map>
 #include <iostream>
+#include <assert.h>
 #include "koopa.h"
 
 
@@ -38,6 +39,8 @@ class BaseRSICV
         std::string Visit(const koopa_raw_binary_t &binary);
         std::string Visit(const koopa_raw_load_t &load);
         std::string Visit(const koopa_raw_store_t &store);
+        std::string Visit(const koopa_raw_branch_t &branch);
+        std::string Visit(const koopa_raw_jump_t &jump);
 
 
     public:
@@ -47,4 +50,7 @@ class BaseRSICV
         }
         void build(koopa_raw_program_t raw_prog);
         virtual ~BaseRSICV() = default;
+        int func_size(const koopa_raw_function_t &func);
+        int blk_size(koopa_raw_basic_block_t block);
+        int inst_size(koopa_raw_value_t inst);
 };

@@ -1,5 +1,38 @@
 #include "rsicv.h"
 
+int BaseRSICV::func_size(const koopa_raw_function_t &func) {
+    int size = 0;
+    for(int i = 0; i< func->bbs.len; i++) {
+        size += blk_size(reinterpret_cast<koopa_raw_basic_block_t>(func->bbs.buffer[i]));
+    }
+    return size;
+}
+
+int BaseRSICV::blk_size(koopa_raw_basic_block_t block) {
+    int size = 0;
+    for(int i = 0; i < block->insts.len; i++) {
+        // assert(block->insts.buffer[i] != nullptr);
+        size += inst_size(reinterpret_cast<koopa_raw_value_t>(block->insts.buffer[i]));
+    }
+    return size;
+}
+
+int BaseRSICV::inst_size(koopa_raw_value_t inst) {
+    // assert(inst->ty != nullptr);
+    switch (inst->kind.tag) {
+        case KOOPA_RVT_ALLOC:
+            return 4;
+        case KOOPA_RVT_LOAD:
+            return 4;
+        case KOOPA_RVT_BINARY:
+            return 4;
+        default:
+            return 0;
+    }
+
+    return 0;
+}
+
 void BaseRSICV::Env::reg_init() {
     for(size_t i = 0; i< 8; i++) {
         reg_status_map[ "t" + std::to_string(i) ] = UNUSED;
@@ -79,6 +112,7 @@ std::string BaseRSICV::store_offset(int addr, std::string reg) {
 }
 
 
+
 void BaseRSICV::build(koopa_raw_program_t raw_prog) {
     out << Visit(raw_prog);
     out.close();
@@ -133,6 +167,14 @@ std::string BaseRSICV::Visit(const koopa_raw_function_t &func) {
     std::string ret = "";
     ret += "\t.global " + std::string(func->name + 1) + "\n";
     ret += std::string(func->name + 1) + ":\n";
+
+    int sub_sp = func_size(func);
+    // sub_sp = sub_sp*4;
+    if(sub_sp % 16 != 0)
+        sub_sp += 16 - (sub_sp % 16);
+    env.stack_init(sub_sp);
+    ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+
     ret += Visit(func->bbs);
     return ret;
 }
@@ -140,19 +182,21 @@ std::string BaseRSICV::Visit(const koopa_raw_function_t &func) {
 std::string BaseRSICV::Visit(const koopa_raw_basic_block_t &block) {
     std::string ret = "";
     // std::cout << "len::" << std::to_string(block->insts.len) << std::endl;
-    int sub_sp = 0;
-    for(int i = 0; i<(block->insts.len); i++) {
-        koopa_raw_value_data * inst = (koopa_raw_value_data *)block->insts.buffer[i];
-        // std::cout << "tag::" << std::to_string(inst->kind.tag) << std::endl;
-        if(inst->kind.tag == KOOPA_RVT_ALLOC || inst->kind.tag == KOOPA_RVT_LOAD || 
-                inst->kind.tag == KOOPA_RVT_BINARY)
-            sub_sp++;
-    }
-    sub_sp = sub_sp*4;
-    if(sub_sp % 16 != 0)
-        sub_sp += 16 - (sub_sp % 16);
-    env.stack_init(sub_sp);
-    ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+    // int sub_sp = 0;
+    // for(int i = 0; i<(block->insts.len); i++) {
+    //     koopa_raw_value_data * inst = (koopa_raw_value_data *)block->insts.buffer[i];
+    //     // std::cout << "tag::" << std::to_string(inst->kind.tag) << std::endl;
+    //     if(inst->kind.tag == KOOPA_RVT_ALLOC || inst->kind.tag == KOOPA_RVT_LOAD || 
+    //             inst->kind.tag == KOOPA_RVT_BINARY)
+    //         sub_sp++;
+    // }
+    // sub_sp = sub_sp*4;
+    // if(sub_sp % 16 != 0)
+    //     sub_sp += 16 - (sub_sp % 16);
+    // env.stack_init(sub_sp);
+    // ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+    if(block->name != "\%entry")
+        ret += std::string(block->name + 1) + ":\n";
     ret += Visit(block->insts);
     return ret;
 }
@@ -187,7 +231,15 @@ std::string BaseRSICV::Visit(const koopa_raw_value_t &value) {
     case KOOPA_RVT_STORE:
         ret += Visit(kind.data.store);
         break;
+    
+    case KOOPA_RVT_BRANCH:
+        ret += Visit(kind.data.branch);
+        break;
 
+    case KOOPA_RVT_JUMP:
+        ret += Visit(kind.data.jump);
+        break;
+        
     default:
         break;
     }
@@ -313,3 +365,24 @@ std::string BaseRSICV::Visit(const koopa_raw_store_t &store) {
 }
 
 
+std::string BaseRSICV::Visit(const koopa_raw_branch_t &branch) {
+    std::string ret = "";
+    std::string rd = "t0";
+    // int addr = env.get_offset(branch.cond);
+    
+    ret += reg_load(branch.cond, rd);
+    ret += "\tbnez " + rd + ", " + std::string(branch.true_bb->name + 1) + "\n";
+    ret += "\tj " + std::string(branch.false_bb->name + 1) + "\n";
+    
+    return ret;
+}
+
+std::string BaseRSICV::Visit(const koopa_raw_jump_t &jump) {
+    std::string ret = "";
+    std::string rd = "t0";
+    // int addr = env.get_offset(branch.cond);
+    
+    ret += "\tj " + std::string(jump.target->name + 1) + "\n";
+    
+    return ret;
+}

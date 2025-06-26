@@ -40,7 +40,8 @@ EqOp    [!=]=
 "int" {return INT;}
 "return" {return RETURN;}
 "const" {return CONST;}
-
+"if"            { return IF; }
+"else"          { return ELSE; }
 
 "||"            { yylval.str_val = new string(yytext); return OR; }
 "&&"            { yylval.str_val = new string(yytext); return AND; }

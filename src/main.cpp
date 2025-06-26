@@ -37,6 +37,7 @@ int main(int argc, const char *argv[]) {
   if( std::string(mode) == "-koopa") {
     koopa_program_t prog;
     koopa_error_code_t err = koopa_generate_raw_to_koopa(&raw_prog,&prog);
+    std::cout << std::to_string(err) << std::endl;
     assert(err == KOOPA_EC_SUCCESS);
 
     koopa_dump_to_file(prog, output);

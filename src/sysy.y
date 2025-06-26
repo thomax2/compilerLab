@@ -37,7 +37,7 @@ using namespace std;
 // INT RETURN just token symbol, other which have <xxxx> means have value in yylval.xxxx 
 // lexer 返回的所有 token 种类的声明
 
-%token INT RETURN CONST
+%token INT RETURN CONST IF ELSE
 %token <str_val> IDENT RELOP EQOP OR AND
 %token <int_val> INT_CONST 
 
@@ -45,7 +45,7 @@ using namespace std;
 %type <ast_val> FuncDef FuncType Block Stmt Number
 %type <ast_val> Exp PrimaryExp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 %type <ast_val> LVal Decl ConstDecl ConstDef ConstExp ConstInitVal BlockItem BType
-%type <ast_val> VarDecl VarDef InitVal
+%type <ast_val> VarDecl VarDef InitVal If
 %type <str_val> UnaryOp AddOp MulOp 
 %type <ast_vec> BlockList ConstList VarList
 
@@ -150,6 +150,29 @@ Stmt
         auto ast = new StmtAST();
         ast->type = StmtAST::RET;
         ast->expr = nullptr;
+        $$ = ast;
+    } |
+    If {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::IF;
+        ast->expr = unique_ptr<BaseAST>($1);
+        ast->lval = nullptr;
+        $$ = ast;
+    } |
+    If ELSE Stmt {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::IF;
+        ast->expr = unique_ptr<BaseAST>($1);
+        ast->lval = unique_ptr<BaseAST>($3);
+        $$ = ast;
+    }
+    ;
+
+If
+    : IF '(' Exp ')' Stmt {
+        auto ast = new IfAST();
+        ast->expr = unique_ptr<BaseAST>($3);
+        ast->stmt = unique_ptr<BaseAST>($5);
         $$ = ast;
     }
     ;
