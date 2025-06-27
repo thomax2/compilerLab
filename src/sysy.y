@@ -37,7 +37,7 @@ using namespace std;
 // INT RETURN just token symbol, other which have <xxxx> means have value in yylval.xxxx 
 // lexer 返回的所有 token 种类的声明
 
-%token INT RETURN CONST IF ELSE
+%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE
 %token <str_val> IDENT RELOP EQOP OR AND
 %token <int_val> INT_CONST 
 
@@ -45,7 +45,7 @@ using namespace std;
 %type <ast_val> FuncDef FuncType Block Stmt Number
 %type <ast_val> Exp PrimaryExp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 %type <ast_val> LVal Decl ConstDecl ConstDef ConstExp ConstInitVal BlockItem BType
-%type <ast_val> VarDecl VarDef InitVal If
+%type <ast_val> VarDecl VarDef InitVal If While
 %type <str_val> UnaryOp AddOp MulOp 
 %type <ast_vec> BlockList ConstList VarList
 
@@ -165,12 +165,42 @@ Stmt
         ast->expr = unique_ptr<BaseAST>($1);
         ast->lval = unique_ptr<BaseAST>($3);
         $$ = ast;
+    } |
+    While {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::WHILE;
+        ast->expr = unique_ptr<BaseAST>($1);
+        ast->lval = nullptr;
+        $$ = ast;
+    } |
+    BREAK {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::BREAK;
+        ast->expr = nullptr;
+        ast->lval = nullptr;
+        $$ = ast;
+    } | 
+    CONTINUE {
+        auto ast = new StmtAST();
+        ast->type = StmtAST::CONTINUE;
+        ast->expr = nullptr;
+        ast->lval = nullptr;
+        $$ = ast;
     }
     ;
 
 If
     : IF '(' Exp ')' Stmt {
         auto ast = new IfAST();
+        ast->expr = unique_ptr<BaseAST>($3);
+        ast->stmt = unique_ptr<BaseAST>($5);
+        $$ = ast;
+    }
+    ;
+
+While
+    : WHILE '(' Exp ')' Stmt {
+        auto ast = new WhileAST();
         ast->expr = unique_ptr<BaseAST>($3);
         ast->stmt = unique_ptr<BaseAST>($5);
         $$ = ast;

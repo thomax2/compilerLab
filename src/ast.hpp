@@ -12,10 +12,13 @@
 using namespace std;
 
 static SymbolList sym_list;
+
 static BlockList  blk_list;
 static int then_else_num=0;
 static std::map<koopa_raw_basic_block_data_t *, int> then_else_map;
 static int r_te_num = 0;
+
+static WhileList whl_list;
 
 // static SymbolList ;
 
@@ -94,7 +97,7 @@ class BlockAST : public BaseAST {
 
 class StmtAST : public BaseAST {
     public:
-        enum {RET, VAL, EXP, BLOCK, IF} type;
+        enum {RET, VAL, EXP, BLOCK, IF, WHILE, BREAK, CONTINUE} type;
         std::unique_ptr<BaseAST> expr;
         std::unique_ptr<BaseAST> lval;
 
@@ -109,6 +112,17 @@ class StmtAST : public BaseAST {
 
 
 class IfAST : public BaseAST {
+    public:
+        std::unique_ptr<BaseAST> expr;
+        std::unique_ptr<BaseAST> stmt;
+
+        void Dump() const override {}
+        void* Koop() const override;
+        // void* Koop(std::vector<const void*>& insts) const override;
+        // void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
+class WhileAST : public BaseAST {
     public:
         std::unique_ptr<BaseAST> expr;
         std::unique_ptr<BaseAST> stmt;

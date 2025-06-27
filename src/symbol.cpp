@@ -69,3 +69,30 @@ void BlockList::inst2block(const void *inst) {
     if(!checkBlock())
         insts.push_back(inst);
 }
+
+void WhileList::while_add(koopa_raw_basic_block_t entry, koopa_raw_basic_block_t end) {
+    while_list.push_back(While(entry, end, while_num++));
+}
+
+void WhileList::while_del() {
+    while_list.pop_back();
+}
+
+koopa_raw_basic_block_t WhileList::while_end() {
+    if(while_list.size() == 0)
+        return nullptr;
+    return while_list.back().end;
+}
+
+koopa_raw_basic_block_t WhileList::while_entry() {
+    if(while_list.size() == 0)
+        return nullptr;
+    return while_list.back().entry;
+}
+
+int WhileList::while_dep() {
+    if(while_list.size() == 0)
+        return -1;
+    return while_list.back().num;
+}
+

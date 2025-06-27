@@ -73,7 +73,7 @@ void* StmtAST::Koop() const {
     ret->ty = type_kind(KOOPA_RTT_UNIT);
     ret->used_by = slice(KOOPA_RSIK_VALUE);
 
-    if( expr != nullptr ) {
+    if( expr != nullptr || type == BREAK || type == CONTINUE) {
         if(type == RET) {
             ret->kind.tag = KOOPA_RVT_RETURN;
             if(expr != nullptr)
@@ -124,6 +124,22 @@ void* StmtAST::Koop() const {
                 blk_list.inst2block(jump_value(end));
                 blk_list.block_add(end);
             }
+        } else if(type == WHILE) {
+            ret = (koopa_raw_value_data *)expr->Koop();
+        } else if(type == BREAK) {
+            if(whl_list.while_end() != nullptr)
+                blk_list.inst2block(jump_value(whl_list.while_end()));
+            else {
+                std::cout << "break not in while" << std::endl;
+                assert(false);
+            }
+        } else if(type == CONTINUE) {
+            if(whl_list.while_entry() != nullptr)
+                blk_list.inst2block(jump_value(whl_list.while_entry()));
+            else {
+                std::cout << "continue not in while" << std::endl;
+                assert(false);
+            }
         } else {
             assert(false);
         }    
@@ -155,6 +171,60 @@ void* IfAST::Koop() const {
     ret->kind.data.branch.true_bb = then;
 
     stmt->Koop();
+    return ret;
+}
+
+void* WhileAST::Koop() const {
+    koopa_raw_value_data *ret = new koopa_raw_value_data();
+
+    // blk_list.inst2block(ret);
+
+    koopa_raw_basic_block_data_t *entry = new koopa_raw_basic_block_data_t();
+    koopa_raw_basic_block_data_t *body = new koopa_raw_basic_block_data_t();
+    koopa_raw_basic_block_data_t *end = new koopa_raw_basic_block_data_t();
+    whl_list.while_add(entry,end);
+    int num = whl_list.while_dep();
+    assert(num != -1);
+    // int num = whl_stc.num;
+    std::string entry_name = "%while_entry_" + std::to_string(num);
+    std::string body_name = "%while_body_" + std::to_string(num);
+    std::string end_name = "\%while_end_" + std::to_string(num);
+
+    // then->name = strdup(then_name.c_str());
+
+
+    entry->name = strdup(entry_name.c_str());
+    entry->params = slice(KOOPA_RSIK_VALUE);
+    entry->used_by = slice(KOOPA_RSIK_VALUE);
+    blk_list.inst2block(jump_value(entry));
+    blk_list.block_add(entry);
+
+    ret->ty = type_kind(KOOPA_RTT_UNIT);
+    ret->name = nullptr;
+    ret->kind.tag = KOOPA_RVT_BRANCH;
+    ret->kind.data.branch.cond = (koopa_raw_value_t)expr->Koop();
+
+
+    body->name = strdup(body_name.c_str());
+    body->params = slice(KOOPA_RSIK_VALUE);
+    body->used_by = slice(KOOPA_RSIK_VALUE);
+
+    end->name = strdup(end_name.c_str());
+    end->params = slice(KOOPA_RSIK_VALUE);
+    end->used_by = slice(KOOPA_RSIK_VALUE);
+
+    ret->kind.data.branch.true_args = slice(KOOPA_RSIK_VALUE);
+    ret->kind.data.branch.true_bb = body;
+    ret->kind.data.branch.false_args = slice(KOOPA_RSIK_VALUE);
+    ret->kind.data.branch.false_bb = end;
+
+    blk_list.inst2block(ret);
+    blk_list.block_add(body);
+
+    stmt->Koop();
+    whl_list.while_del();
+    blk_list.inst2block(jump_value(entry));
+    blk_list.block_add(end);
     return ret;
 }
 
@@ -536,7 +606,7 @@ void* LAndExpAST::Koop() const {
     re_store2->used_by = slice(KOOPA_RSIK_VALUE);
     re_store2->kind.tag = KOOPA_RVT_STORE;
     re_store2->kind.data.store.dest = result;
-    re_store2->kind.data.store.value = (koopa_raw_value_t)Int2bool(laexp);
+    re_store2->kind.data.store.value = (koopa_raw_value_t)Int2bool(eexp);
     blk_list.inst2block(re_store2);
     blk_list.inst2block(jump_value(end));
 
@@ -552,25 +622,7 @@ void* LAndExpAST::Koop() const {
     ret->kind.data.load.src = result;
     blk_list.inst2block(ret);
     
-    // blk_list.inst2block(jump_value(end));
 
-
-    // koopa_raw_value_data *ret = new koopa_raw_value_data();
-    // koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
-
-    // ty->tag = KOOPA_RTT_INT32;
-
-    // ret->kind.tag = KOOPA_RVT_BINARY;
-    // ret->name = nullptr;
-    // ret->ty = ty;
-    // ret->used_by = slice(KOOPA_RSIK_VALUE);
-
-    // ret->kind.data.binary.lhs = (koopa_raw_value_t)Int2bool(laexp);
-    // ret->kind.data.binary.rhs = (koopa_raw_value_t)Int2bool(eexp);
-    // ret->kind.data.binary.op = KOOPA_RBO_AND;
-
-    // blk_list.inst2block(ret);
-    // return ret;
     return ret;
     // return nullptr;
 }
@@ -667,22 +719,6 @@ void* LOrExpAST::Koop() const {
     ret->kind.data.load.src = result;
     blk_list.inst2block(ret);
 
-    // koopa_raw_value_data *ret = new koopa_raw_value_data();
-    // koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
-
-    // ty->tag = KOOPA_RTT_INT32;
-
-    // ret->kind.tag = KOOPA_RVT_BINARY;
-    // ret->name = nullptr;
-    // ret->ty = ty;
-    // ret->used_by = slice(KOOPA_RSIK_VALUE);
-
-    // ret->kind.data.binary.lhs = (koopa_raw_value_t)Int2bool(loexp);
-    // ret->kind.data.binary.rhs = (koopa_raw_value_t)Int2bool(laexp);
-    // ret->kind.data.binary.op = KOOPA_RBO_OR;
-
-    // blk_list.inst2block(ret);
-    // return ret;
     return ret;
 }
 

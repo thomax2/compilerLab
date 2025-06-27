@@ -49,6 +49,25 @@ class BlockList {
         bool checkBlock();
 };
 
+class WhileList {
+    int while_num = 0;
+    private:
+        struct While
+        {
+            koopa_raw_basic_block_t entry;
+            koopa_raw_basic_block_t end;
+            int num;
+            While(koopa_raw_basic_block_t entry, koopa_raw_basic_block_t end, int num)
+                : entry(entry), end(end), num(num) {}
+        };
+        std::vector<While> while_list;
 
+    public:
+        void while_add(koopa_raw_basic_block_t entry, koopa_raw_basic_block_t end);
+        koopa_raw_basic_block_t while_entry();
+        koopa_raw_basic_block_t while_end();
+        void while_del();
+        int while_dep();
+};
 
 #endif
