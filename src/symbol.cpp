@@ -11,6 +11,19 @@ Symbol SymbolList::list_get(std::string ident) {
             return it->at(ident);
         }
     }
+    std::cout << "Identifier not found: " << ident << std::endl;
+    std::cout << "Available identifiers in symbol table:" << std::endl;
+
+    // 遍历 sym_list_vec 中所有 map 的 key
+    for (size_t depth = 0; depth < sym_list_vec.size(); ++depth) {
+        const auto& scope = sym_list_vec[depth];
+        std::cout << "  Scope level " << depth << ":" << std::endl;
+        for (const auto& pair : scope) {
+            std::cout << "    " << pair.first << std::endl;
+        }
+    }
+
+    assert(false);
     return Symbol();
 }
 

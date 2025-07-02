@@ -37,50 +37,122 @@ using namespace std;
 // INT RETURN just token symbol, other which have <xxxx> means have value in yylval.xxxx 
 // lexer 返回的所有 token 种类的声明
 
-%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE
+%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE VOID
 %token <str_val> IDENT RELOP EQOP OR AND
 %token <int_val> INT_CONST 
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Number
+%type <ast_val> FuncDef Block Stmt Number CompUnit
 %type <ast_val> Exp PrimaryExp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 %type <ast_val> LVal Decl ConstDecl ConstDef ConstExp ConstInitVal BlockItem BType
-%type <ast_val> VarDecl VarDef InitVal If While
+%type <ast_val> VarDecl VarDef InitVal If While 
+%type <ast_val> FuncFParam CompItem
 %type <str_val> UnaryOp AddOp MulOp 
-%type <ast_vec> BlockList ConstList VarList
+%type <ast_vec> BlockList ConstList VarList ExpList ParamsList CompList FuncRParams
 
 %%
 
 // complier unit, ast = "FuncDef", FuncDef decompoised in later context
 CompUnit
-    : FuncDef {
+    : CompList {
         auto comp_unit = make_unique<CompUnitAST>();
-        comp_unit->func_def = unique_ptr<BaseAST>($1);
+        comp_unit->clist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($1);
         ast = move(comp_unit);
+    }
+    ;
+
+CompList
+    : CompList CompItem  {
+        auto clist = (vector<std::unique_ptr<BaseAST>>*)($1);
+        auto fdef = std::unique_ptr<BaseAST>($2);
+        clist->push_back(std::move(fdef));
+        $$ = clist;
+    } |
+    CompItem {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto fdef = std::unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(fdef));
+        $$ = vec;
+    }
+    ;
+
+CompItem
+    : FuncDef {
+        auto ast = new CompItemAST();
+        ast->type = CompItemAST::FUNC;
+        ast->item = std::unique_ptr<BaseAST>($1);
+        $$ = ast;
+    } |
+    ConstDecl {
+        auto ast = new CompItemAST();
+        ast->type = CompItemAST::CONST;
+        ast->item = std::unique_ptr<BaseAST>($1);
+        $$ = ast;
+    } |
+    VarDecl {
+        auto ast = new CompItemAST();
+        ast->type = CompItemAST::VAR;
+        ast->item = std::unique_ptr<BaseAST>($1);
+        $$ = ast;
     }
     ;
 
 // $(x) is xth after :
 // $$ is return value assign to XXX left of :
 FuncDef
-    : FuncType IDENT '(' ')' Block {
+    : BType IDENT '(' ParamsList ')' Block {
         auto ast = new FuncDefAST();
         ast->func_type = unique_ptr<BaseAST>($1);
         ast->ident = *unique_ptr<string>($2);
-        ast->block = unique_ptr<BaseAST>($5);
+        ast->params = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($4);
+        ast->block = unique_ptr<BaseAST>($6);
         $$ = ast;
     }
     ;
 
 // only can be int
-FuncType
-    : INT {
-        auto ast = new FuncTypeAST();
-        ast->func_type = "int";
-        $$ = ast;
+// FuncType
+//     : INT {
+//         auto ast = new FuncTypeAST();
+//         ast->func_type = "int";
+//         $$ = ast;
+//     } |
+//     VOID {
+//         auto ast = new FuncTypeAST();
+//         ast->func_type = "void";
+//         $$ = ast;
+//     }
+//     ;
+
+// FuncFParams : ParamsList;
+
+ParamsList
+    : FuncFParam ',' ParamsList {
+        auto plist = (vector<std::unique_ptr<BaseAST>>*)($3);
+        auto fparam = std::unique_ptr<BaseAST>($1);
+        plist->push_back(std::move(fparam));
+        $$ = plist;
+    } |
+    FuncFParam {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto fparam = std::unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(fparam));
+        $$ = vec;
+    } |
+    {
+        $$ = nullptr;
     }
     ;
 
+
+FuncFParam
+    : BType IDENT {
+        auto ast = new FuncFParamAST();
+        ast->btype = std::unique_ptr<BaseAST>($1);;
+        ast->ident = *unique_ptr<string>($2);
+        $$ = ast;
+    }
+    ;
 
 // IDENT is token not need rule
 
@@ -264,6 +336,33 @@ UnaryExp
         ast->uop = *unique_ptr<string>($1);
         ast->uexp = unique_ptr<BaseAST>($2);
         $$ = ast;
+    } |
+    IDENT '(' FuncRParams ')' {
+        auto ast = new UnaryExpAST();
+        ast->type = UnaryExpAST::FUNC;
+        ast->uop = *unique_ptr<string>($1);
+        ast->plist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($3);
+        $$ = ast;
+    }
+    ;
+
+FuncRParams : ExpList;
+
+ExpList
+    : ExpList ',' Exp  {
+        auto vec = (vector<std::unique_ptr<BaseAST>>*)($1);
+        auto elist = unique_ptr<BaseAST>($3);
+        vec->push_back(std::move(elist));
+        $$ = vec;
+    } |
+    Exp {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto exp = unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(exp));
+        $$ = vec;
+    } |
+    {
+        $$ = new std::vector<std::unique_ptr<BaseAST>> ();
     }
     ;
 
@@ -434,6 +533,11 @@ BType
         auto ast = new BTypeAST();
         ast->btype = "int";
         $$ = ast;
+    } |
+    VOID {
+        auto ast = new BTypeAST();
+        ast->btype = "void";
+        $$ = ast;
     }
     ;
 
@@ -495,8 +599,13 @@ InitVal : Exp;
 
 %%
 
-void yyerror(std::unique_ptr<BaseAST> &ast, const char* s) {
-    cerr << "error:" << s << endl;
+void yyerror(std::unique_ptr<BaseAST> &ast, const char *s) {
+  extern int yylineno;
+  extern char *yytext;
+  int len = strlen(yytext);
+  int i;
+  char buf[512] = {0};
+  for (i=0; i<len; ++i)
+    sprintf(buf, "%s%d ", buf, yytext[i]);
+  fprintf(stderr, "ERROR: %s at symbol '%s' on line %d\n", s, buf, yylineno);
 }
-
-

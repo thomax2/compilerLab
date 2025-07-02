@@ -51,3 +51,14 @@ koopa_raw_value_data *jump_value(koopa_raw_basic_block_t tar) {
     jump->kind.data.jump.target = tar;
     return jump;
 }
+
+koopa_raw_value_data *return_value() {
+    koopa_raw_value_data *ret = new koopa_raw_value_data_t();
+    ret->ty = type_kind(KOOPA_RTT_UNIT);
+    ret->name = nullptr;
+    ret->kind.tag = KOOPA_RVT_RETURN;
+    ret->kind.data.ret.value = nullptr;
+    ret->used_by = slice(KOOPA_RSIK_VALUE);
+    return ret;
+}
+

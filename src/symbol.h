@@ -4,19 +4,23 @@
 #include <memory>
 #include <cstdlib>
 #include <map>
+#include <iostream>
+#include <assert.h>
 #include "koopa.h"
 #include "utils.h"
 
-enum SymType {CONST_SYM, VAR_SYM};
+enum SymType {CONST_SYM, VAR_SYM, FUNC};
 struct Symbol {
     SymType type;
     union symbol {
         int const_sym;
         koopa_raw_value_t var_sym;
+        koopa_raw_function_t func;
     }data;
     Symbol() = default;
     Symbol(SymType type, int val) : type(type) {data.const_sym = val;}
     Symbol(SymType type, koopa_raw_value_t var) : type(type) {data.var_sym = var;}
+    Symbol(SymType type, koopa_raw_function_t func) : type(type) {data.func = func;}
 };
 
 
@@ -69,5 +73,6 @@ class WhileList {
         void while_del();
         int while_dep();
 };
+
 
 #endif

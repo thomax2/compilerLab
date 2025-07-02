@@ -1,31 +1,193 @@
 #include "ast.hpp"
 
+void CompUnitAST::lib_func_load(std::vector<const void*> &funcs) const {
+    FuncFParamAST ff;
+    koopa_raw_function_data_t *func = new koopa_raw_function_data_t();
+    koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_INT32);
+
+    func->ty = ty;
+    func->name = "@getint";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_INT32);
+
+    func->ty = ty;
+    func->name = "@getch";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    std::vector<const void *> plist;
+    plist.clear();
+    plist.push_back(pointer_type_kind(KOOPA_RTT_INT32));
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(plist, KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_INT32);
+
+    func->ty = ty;
+    func->name = "@getarray";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    plist.clear();
+    plist.push_back(type_kind(KOOPA_RTT_INT32));
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(plist, KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_UNIT);
+
+    func->ty = ty;
+    func->name = "@putint";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    plist.clear();
+    plist.push_back(type_kind(KOOPA_RTT_INT32));
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(plist, KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_UNIT);
+
+    func->ty = ty;
+    func->name = "@putch";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    plist.clear();
+    plist.push_back(type_kind(KOOPA_RTT_INT32));
+    plist.push_back(pointer_type_kind(KOOPA_RTT_INT32));
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(plist, KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_UNIT);
+
+    func->ty = ty;
+    func->name = "@putarray";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_UNIT);
+
+    func->ty = ty;
+    func->name = "@starttime";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+
+    func = new koopa_raw_function_data_t();
+    ty = new koopa_raw_type_kind_t();
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params = slice(KOOPA_RSIK_TYPE);
+    ty->data.function.ret = type_kind(KOOPA_RTT_UNIT);
+
+    func->ty = ty;
+    func->name = "@stoptime";
+    func->params = slice(KOOPA_RSIK_VALUE);
+    func->bbs = slice(KOOPA_RSIK_BASIC_BLOCK);
+    sym_list.list_add(func->name + 1, Symbol(SymType::FUNC, func));
+    funcs.push_back(func);
+}
+
 
 void* CompUnitAST::Koop() const {
-    std::vector<const void*> funcs{func_def->Koop()};
+    sym_list.list_new();
+    std::vector<const void*> funcs;
+    std::vector<const void*> values;
+    lib_func_load(funcs);
+
+    for(auto item = (*clist).begin(); item != (*clist).end(); item ++) {
+        (*item)->Koop(funcs, values);
+    }
 
     koopa_raw_program_t *ret = new koopa_raw_program_t();
     
     // global value unused
-    ret->values = slice(KOOPA_RSIK_VALUE);
+    ret->values = slice(values, KOOPA_RSIK_VALUE);
     ret->funcs = slice(funcs, KOOPA_RSIK_FUNCTION);
 
     return ret;
+}
+
+void* CompItemAST::Koop(std::vector<const void*> &funcs, std::vector<const void*> &values) const {
+    if(type == FUNC) {
+        funcs.push_back(item->Koop());
+    } else if( type == VAR) {
+        item->Koop(values);
+    } else if( type == CONST) {
+        item->Koop();
+    }
+
+    return nullptr;
 }
 
 void* FuncDefAST::Koop() const {
     koopa_raw_function_data_t *ret = new koopa_raw_function_data_t();
     koopa_raw_basic_block_data_t *ent = new koopa_raw_basic_block_data_t();
     koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
-    ty->tag = KOOPA_RTT_FUNCTION;
-    ty->data.function.params = slice(KOOPA_RSIK_TYPE);
-    ty->data.function.ret = (const struct koopa_raw_type_kind *)func_type->Koop();
+
     
-    char *name = new char[ident.length() + 1];
-    ("@" + ident).copy(name, ident.length() + 1);
+    std::vector<const void *> type_list;
+    std::vector<const void *> value_list;
+
+    sym_list.list_add(ident.c_str(), Symbol(SymType::FUNC, ret));
+
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.ret = (koopa_raw_type_t)func_type->Koop();
+    if(params != nullptr) {
+        // std::vector<const void *> plist;
+        for(size_t i = 0; i < params->size(); i++) {
+            type_list.push_back( (*params)[i]->Koop() );
+        }
+        ty->data.function.params = slice(type_list, KOOPA_RSIK_TYPE);
+    } else 
+        ty->data.function.params = slice(KOOPA_RSIK_TYPE);
+
+    std::string full_name = "@" + ident;
+    char *name = new char[full_name.length() + 1];
+    std::copy(full_name.begin(), full_name.end(), name);
+    name[full_name.length()] = '\0';
+        
+    
     ret->ty = ty;
     ret->name = name;
-    ret->params = slice(KOOPA_RSIK_VALUE);
+    // plist.clear();
+
+    if(params != nullptr) {
+        for(size_t i = 0; i < params->size(); i++) {
+            value_list.push_back( (*params)[i]->Koop(i) );
+        }
+        ret->params = slice(value_list, KOOPA_RSIK_VALUE);
+    } else
+        ret->params = slice(KOOPA_RSIK_VALUE);
 
     std::vector<const void *> blocks;
     blk_list.block_init(&blocks);
@@ -36,19 +198,50 @@ void* FuncDefAST::Koop() const {
     ent->used_by = slice(KOOPA_RSIK_VALUE);
 
     blk_list.block_add(ent);
+    sym_list.list_new();
+    if(params != nullptr) {
+        for(size_t i = 0; i < params->size(); i++) {
+            koopa_raw_value_data *alloc = new koopa_raw_value_data();
+            alloc->ty = pointer_type_kind(KOOPA_RTT_INT32);
+            alloc->name = ((koopa_raw_value_t)value_list[i])->name;
+            alloc->used_by = slice(KOOPA_RSIK_VALUE);
+            alloc->kind.tag = KOOPA_RVT_ALLOC;
+            blk_list.inst2block(alloc);
+            sym_list.list_add(alloc->name + 1, Symbol(SymType::VAR_SYM, alloc));
+
+            koopa_raw_value_data *store = new koopa_raw_value_data();
+            store->ty = pointer_type_kind(KOOPA_RTT_INT32);
+            store->name = nullptr;
+            store->used_by = slice(KOOPA_RSIK_VALUE);
+            store->kind.tag = KOOPA_RVT_STORE;
+            store->kind.data.store.dest = alloc;
+            store->kind.data.store.value = (koopa_raw_value_t)value_list[i];
+            blk_list.inst2block(store);
+        }
+    }
     block->Koop();
+    blk_list.inst2block(return_value());
+    sym_list.list_del();
     blk_list.block_quit();
-    ret->bbs = slice(blocks,KOOPA_RSIK_BASIC_BLOCK);
+    ret->bbs = slice(blocks, KOOPA_RSIK_BASIC_BLOCK);
     return ret;
 }
 
-void* FuncTypeAST::Koop() const {
-    koopa_raw_type_kind_t *ret = new koopa_raw_type_kind_t();
-    if(func_type == "int") {
-        ret->tag = KOOPA_RTT_INT32;
-        return ret;
-    }
-    return nullptr;  // TODO
+void* FuncFParamAST::Koop() const {
+    return (void *)btype->Koop();
+}
+
+void* FuncFParamAST::Koop(size_t index) const {
+    koopa_raw_value_data *ret = new koopa_raw_value_data();
+    char *name = new char[ident.length() + 1];
+    ("@" + ident).copy(name, ident.length()+1);
+    ret->name = name;
+    ret->ty = (koopa_raw_type_t)(btype->Koop());
+    ret->used_by = slice(KOOPA_RSIK_VALUE);
+
+    ret->kind.tag = KOOPA_RVT_FUNC_ARG_REF;
+    ret->kind.data.func_arg_ref.index = index;
+    return ret;
 }
 
 void* BlockAST::Koop() const {
@@ -324,6 +517,27 @@ void* UnaryExpAST::Koop() const {
             assert(false);
         }
 
+        blk_list.inst2block(ret);
+        return ret;
+    } else if(type == FUNC) {    // function call            int add(int x, int y);
+        koopa_raw_value_data *ret = new koopa_raw_value_data();
+        Symbol sym = sym_list.list_get(uop);
+        assert(sym.type == SymType::FUNC);
+        ret->ty = sym.data.func->ty->data.function.ret;
+        ret->name = nullptr;
+        ret->used_by = slice(KOOPA_RSIK_VALUE);
+        ret->kind.tag = KOOPA_RVT_CALL;
+        ret->kind.data.call.callee = sym.data.func;
+        
+        if(plist != nullptr) {
+            std::vector<const void *> args;
+
+            for(auto func = (*plist).rbegin(); func != (*plist).rend(); func ++) {
+                args.push_back((*func)->Koop());
+            }
+            ret->kind.data.call.args = slice(args, KOOPA_RSIK_VALUE);
+        } else
+            ret->kind.data.call.args = slice(KOOPA_RSIK_VALUE);
         blk_list.inst2block(ret);
         return ret;
     }
@@ -748,14 +962,16 @@ void* BTypeAST::Koop() const {
     koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
     if(btype == "int") {
         ty->tag = KOOPA_RTT_INT32;
+    } else if(btype == "void") {
+        ty->tag = KOOPA_RTT_UNIT;
     }
-    return ty;    
+    return ty;
 }
 
 
 void* ConstDefAST::Koop() const {
     int val = cival->Calcu();
-    sym_list.list_add(ident, Symbol(SymType::CONST_SYM, val));
+    sym_list.list_add(ident.c_str(), Symbol(SymType::CONST_SYM, val));
     return nullptr;
 }
 
@@ -769,13 +985,22 @@ void* VarDeclAST::Koop() const {
     return nullptr;
 }
 
+void* VarDeclAST::Koop(std::vector<const void*> &insts) const {
+    // koopa_raw_type_t type = (const koopa_raw_type_t)btype->Koop();
+
+    for(auto vdef = vlist->begin(); vdef != vlist->end(); vdef++) {
+        (*vdef)->Koop(insts);
+    }
+    return nullptr;
+}
+
+
 void* VarDefAST::Koop() const {
     koopa_raw_value_data *ret = new koopa_raw_value_data();
     koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
 
     char *name = new char[ident.length() + 1 + 2];
     ("@" + ident + "_" + std::to_string(sym_list.cur_depth())).copy(name, ident.length()+1+2);
-    // ("@" + ident + "_" + std::to_string(sym_list.cur_depth())).copy(name, ident.length()+1+2);
     ret->name = name;
     ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
     ret->used_by = used;
@@ -787,6 +1012,7 @@ void* VarDefAST::Koop() const {
 
     if(type == VAL) {
         koopa_raw_value_data *store = new koopa_raw_value_data();
+        store->ty = type_kind(KOOPA_RTT_INT32);
         store->name = nullptr;
         store->used_by = slice(KOOPA_RSIK_VALUE);
         store->kind.tag = KOOPA_RVT_STORE;
@@ -797,6 +1023,30 @@ void* VarDefAST::Koop() const {
     return nullptr;
 }
 
+void* VarDefAST::Koop(std::vector<const void*>& insts) const {
+    koopa_raw_value_data *ret = new koopa_raw_value_data();
+    koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
+
+    char *name = new char[ident.length() + 1];
+    ("@" + ident).copy(name, ident.length()+1);
+    ret->name = name;
+    ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
+    ret->used_by = used;
+    ret->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
+    // ret->kind.data.global_alloc.init = 
+    insts.push_back(ret);
+    Symbol sym = Symbol(SymType::VAR_SYM, ret);
+    sym_list.list_add(ident.c_str(), sym);
+
+    if(type == VAL) {
+        ret->kind.data.global_alloc.init = (koopa_raw_value_t)ival->Koop();
+    } else if(type == IDE) {
+        NumberAST zero;
+        zero.num = 0;
+        ret->kind.data.global_alloc.init = (koopa_raw_value_t)(zero.Koop());
+    }
+    return nullptr;
+}
 
 
 

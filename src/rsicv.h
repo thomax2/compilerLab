@@ -3,6 +3,7 @@
 #include <map>
 #include <iostream>
 #include <assert.h>
+// #include <algorithm>
 #include "koopa.h"
 
 
@@ -16,7 +17,8 @@ class BaseRSICV
         public:
             int stack_size = 0;
             int cur_offset = 0;
-            void stack_init(int size);
+            bool call_in_func = false;
+            void stack_init(int size, int max_len);
             int get_offset(koopa_raw_value_t value);
             void reg_init();
             std::string reg_alloc(koopa_raw_value_t value);
@@ -26,6 +28,7 @@ class BaseRSICV
     koopa_raw_value_t current_inst;
     std::string store_offset(int addr, std::string reg);
     std::string reg_load(koopa_raw_value_t value, std::string reg);
+    
 
     private:
         std::ofstream out;
@@ -41,7 +44,10 @@ class BaseRSICV
         std::string Visit(const koopa_raw_store_t &store);
         std::string Visit(const koopa_raw_branch_t &branch);
         std::string Visit(const koopa_raw_jump_t &jump);
-
+        std::string Visit(const koopa_raw_call_t &call);
+        // std::string Visit(const koopa_raw_global_alloc_t &global_alloc);
+        std::string Visit_GLOBAL(const koopa_raw_value_t &value);
+        
 
     public:
         BaseRSICV(const char *path) {
@@ -50,7 +56,7 @@ class BaseRSICV
         }
         void build(koopa_raw_program_t raw_prog);
         virtual ~BaseRSICV() = default;
-        int func_size(const koopa_raw_function_t &func);
-        int blk_size(koopa_raw_basic_block_t block);
-        int inst_size(koopa_raw_value_t inst);
+        int func_size(const koopa_raw_function_t &func, bool *ra_flag, int *max_len);
+        int blk_size(koopa_raw_basic_block_t block, int *call_num, int *max_len);
+        int inst_size(koopa_raw_value_t inst, int *call_num, int *max_len);
 };

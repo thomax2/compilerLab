@@ -14,3 +14,4 @@ koopa_raw_type_t type_kind(koopa_raw_type_tag_t tag);
 
 koopa_raw_type_t pointer_type_kind(koopa_raw_type_tag_t tag);
 koopa_raw_value_data *jump_value(koopa_raw_basic_block_t tar);
+koopa_raw_value_data *return_value();
