@@ -9,17 +9,26 @@
 #include "koopa.h"
 #include "utils.h"
 
-enum SymType {CONST_SYM, VAR_SYM, FUNC};
+enum SymType {CONST_SYM, VAR_SYM, ARRAY_SYM,FUNC, POINTER};
 struct Symbol {
     SymType type;
     union symbol {
         int const_sym;
         koopa_raw_value_t var_sym;
         koopa_raw_function_t func;
+        koopa_raw_value_t array;
+        koopa_raw_value_t pointer;
     }data;
     Symbol() = default;
     Symbol(SymType type, int val) : type(type) {data.const_sym = val;}
-    Symbol(SymType type, koopa_raw_value_t var) : type(type) {data.var_sym = var;}
+    Symbol(SymType type, koopa_raw_value_t var) : type(type) {
+        if(type == VAR_SYM)
+            data.var_sym = var;
+        if(type == ARRAY_SYM)
+            data.array = var;
+        if(type == POINTER)
+            data.pointer = var;
+    }
     Symbol(SymType type, koopa_raw_function_t func) : type(type) {data.func = func;}
 };
 

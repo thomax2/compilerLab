@@ -44,11 +44,11 @@ using namespace std;
 // 非终结符的类型定义
 %type <ast_val> FuncDef Block Stmt Number CompUnit
 %type <ast_val> Exp PrimaryExp UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
-%type <ast_val> LVal Decl ConstDecl ConstDef ConstExp ConstInitVal BlockItem BType
+%type <ast_val> LVal Decl ConstDecl ConstDef BlockItem BType
 %type <ast_val> VarDecl VarDef InitVal If While 
 %type <ast_val> FuncFParam CompItem
 %type <str_val> UnaryOp AddOp MulOp 
-%type <ast_vec> BlockList ConstList VarList ExpList ParamsList CompList FuncRParams
+%type <ast_vec> BlockList ConstList VarList ExpList ParamsList CompList FuncRParams InitValList IndexList
 
 %%
 
@@ -150,6 +150,23 @@ FuncFParam
         auto ast = new FuncFParamAST();
         ast->btype = std::unique_ptr<BaseAST>($1);;
         ast->ident = *unique_ptr<string>($2);
+        ast->type = FuncFParamAST::VAR;
+        $$ = ast;
+    } |
+    BType IDENT '[' ']' {
+        auto ast = new FuncFParamAST();
+        ast->btype = std::unique_ptr<BaseAST>($1);;
+        ast->ident = *unique_ptr<string>($2);
+        ast->ilist = nullptr;
+        ast->type = FuncFParamAST::ARRAY;
+        $$ = ast;
+    } |
+    BType IDENT '[' ']' IndexList {
+        auto ast = new FuncFParamAST();
+        ast->btype = std::unique_ptr<BaseAST>($1);;
+        ast->ident = *unique_ptr<string>($2);
+        ast->ilist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($5);
+        ast->type = FuncFParamAST::ARRAY;
         $$ = ast;
     }
     ;
@@ -318,6 +335,13 @@ LVal
     : IDENT {
         auto ast = new LValAST();
         ast->ident = *unique_ptr<string>($1);
+        ast->ilist = nullptr;
+        $$ = ast;
+    } |
+    IDENT IndexList{
+        auto ast = new LValAST();
+        ast->ident = *unique_ptr<string>($1);
+        ast->ilist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
         $$ = ast;
     }
     ;
@@ -542,17 +566,75 @@ BType
     ;
 
 ConstDef
-    : IDENT '=' ConstInitVal {
+    : IDENT '=' InitVal {
         auto ast = new ConstDefAST();
         ast->ident = *unique_ptr<string>($1);
         ast->cival = unique_ptr<BaseAST>($3);
         $$ = ast;
+    } |
+    IDENT IndexList '=' InitVal {
+        auto ast = new ConstDefAST();
+        ast->ident = *unique_ptr<string>($1);
+        ast->cexp = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
+        ast->cival = unique_ptr<BaseAST>($4);
+        $$ = ast;
     }
     ;
 
-ConstInitVal : ConstExp;
+IndexList
+    : '[' Exp ']' IndexList {
+        auto vec = (vector<std::unique_ptr<BaseAST>>*)($4);
+        auto exp = unique_ptr<BaseAST>($2);
+        vec->push_back(std::move(exp));
+        $$ = vec;
+    } |
+    '[' Exp ']' {
+        auto vec = new vector<std::unique_ptr<BaseAST>>;
+        auto exp = unique_ptr<BaseAST>($2);
+        vec->push_back(std::move(exp));
+        $$ = vec;
+    }
+    ;
 
-ConstExp : Exp;
+InitVal
+    : '{' InitValList '}' {
+        auto ast = new InitValAST();
+        ast->type = InitValAST::LIST;
+        ast->exp = nullptr;
+        ast->ilist = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
+        $$ = ast;
+    } |
+    '{' '}' {
+        auto ast = new InitValAST();
+        ast->type = InitValAST::EMPTY;
+        ast->exp = nullptr;
+        ast->ilist = nullptr;
+        $$ = ast;
+    } |
+    Exp {
+        auto ast = new InitValAST();
+        ast->type = InitValAST::EXP;
+        ast->exp = unique_ptr<BaseAST>($1);
+        ast->ilist = nullptr;
+        $$ = ast;
+    }
+    ;
+
+InitValList
+    : InitValList ',' InitVal {
+        auto vec = (vector<std::unique_ptr<BaseAST>>*)($1);
+        auto exp = unique_ptr<BaseAST>($3);
+        vec->push_back(std::move(exp));
+        $$ = vec;
+    } |
+    InitVal {
+        auto vec = new vector<std::unique_ptr<BaseAST>> ();
+        auto exp = unique_ptr<BaseAST>($1);
+        vec->push_back(std::move(exp));
+        $$ = vec;
+    }
+    ;
+
 
 VarDecl
     : BType VarList ';' {
@@ -583,6 +665,7 @@ VarDef
         auto ast = new VarDefAST();
         ast->type = VarDefAST::IDE;
         ast->ident = *unique_ptr<string>($1);
+        ast->exp = nullptr;
         $$ = ast;
     } |
     IDENT '=' InitVal {
@@ -590,11 +673,26 @@ VarDef
         ast->type = VarDefAST::VAL;
         ast->ident = *unique_ptr<string>($1);
         ast->ival = unique_ptr<BaseAST>($3);
+        ast->exp = nullptr;
+        $$ = ast;
+    } |
+    IDENT IndexList {
+        auto ast = new VarDefAST();
+        ast->type = VarDefAST::IDE;
+        ast->ident = *unique_ptr<string>($1);
+        ast->exp = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
+        $$ = ast;
+    } |
+    IDENT IndexList '=' InitVal {
+        auto ast = new VarDefAST();
+        ast->type = VarDefAST::VAL;
+        ast->ident = *unique_ptr<string>($1);
+        ast->ival = unique_ptr<BaseAST>($4);
+        ast->exp = std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>>($2);
         $$ = ast;
     }
     ;
 
-InitVal : Exp;
 
 
 %%

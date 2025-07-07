@@ -143,7 +143,7 @@ void* CompItemAST::Koop(std::vector<const void*> &funcs, std::vector<const void*
     } else if( type == VAR) {
         item->Koop(values);
     } else if( type == CONST) {
-        item->Koop();
+        item->Koop(values);
     }
 
     return nullptr;
@@ -165,7 +165,7 @@ void* FuncDefAST::Koop() const {
     if(params != nullptr) {
         // std::vector<const void *> plist;
         for(size_t i = 0; i < params->size(); i++) {
-            type_list.push_back( (*params)[i]->Koop() );
+            type_list.push_back( (*params)[params->size() - 1 - i]->Koop() );
         }
         ty->data.function.params = slice(type_list, KOOPA_RSIK_TYPE);
     } else 
@@ -183,7 +183,7 @@ void* FuncDefAST::Koop() const {
 
     if(params != nullptr) {
         for(size_t i = 0; i < params->size(); i++) {
-            value_list.push_back( (*params)[i]->Koop(i) );
+            value_list.push_back( (*params)[params->size() - 1 - i]->Koop(params->size() - 1 - i) );
         }
         ret->params = slice(value_list, KOOPA_RSIK_VALUE);
     } else
@@ -202,15 +202,22 @@ void* FuncDefAST::Koop() const {
     if(params != nullptr) {
         for(size_t i = 0; i < params->size(); i++) {
             koopa_raw_value_data *alloc = new koopa_raw_value_data();
-            alloc->ty = pointer_type_kind(KOOPA_RTT_INT32);
+            koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+            ty->tag = KOOPA_RTT_POINTER;
+            ty->data.pointer.base = ((koopa_raw_value_t)value_list[i])->ty;
+            alloc->ty = ty;
             alloc->name = ((koopa_raw_value_t)value_list[i])->name;
             alloc->used_by = slice(KOOPA_RSIK_VALUE);
             alloc->kind.tag = KOOPA_RVT_ALLOC;
             blk_list.inst2block(alloc);
-            sym_list.list_add(alloc->name + 1, Symbol(SymType::VAR_SYM, alloc));
-
+            if(ty->data.pointer.base->tag == KOOPA_RTT_INT32)
+                sym_list.list_add(alloc->name + 1, Symbol(SymType::VAR_SYM, alloc));
+            else if(ty->data.pointer.base->tag == KOOPA_RTT_POINTER)
+                sym_list.list_add(alloc->name + 1, Symbol(SymType::POINTER, alloc));
+            else
+                assert(false);
             koopa_raw_value_data *store = new koopa_raw_value_data();
-            store->ty = pointer_type_kind(KOOPA_RTT_INT32);
+            store->ty = type_kind(KOOPA_RTT_UNIT);
             store->name = nullptr;
             store->used_by = slice(KOOPA_RSIK_VALUE);
             store->kind.tag = KOOPA_RVT_STORE;
@@ -220,7 +227,7 @@ void* FuncDefAST::Koop() const {
         }
     }
     block->Koop();
-    blk_list.inst2block(return_value());
+    blk_list.inst2block(ret_value(((koopa_raw_type_t)func_type->Koop())->tag));
     sym_list.list_del();
     blk_list.block_quit();
     ret->bbs = slice(blocks, KOOPA_RSIK_BASIC_BLOCK);
@@ -228,15 +235,35 @@ void* FuncDefAST::Koop() const {
 }
 
 void* FuncFParamAST::Koop() const {
-    return (void *)btype->Koop();
+    // return (void *)btype->Koop();
+    if(type == VAR) 
+        return type_kind(KOOPA_RTT_INT32);
+    else if(type == ARRAY) {
+        koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+        if(ilist == nullptr)
+            ty = pointer_type_kind(KOOPA_RTT_INT32);
+        else {
+            std::vector<int> index_vec;
+            for(auto index = (*ilist).begin(); index !=  (*ilist).end(); index++) {
+                index_vec.push_back((*index)->Calcu());
+            }
+            ty->tag = KOOPA_RTT_POINTER;
+            ty->data.pointer.base = array_type_kind(KOOPA_RTT_INT32, index_vec);
+        }
+        return ty;
+    }
+    assert(false);
+    return nullptr;
 }
 
 void* FuncFParamAST::Koop(size_t index) const {
     koopa_raw_value_data *ret = new koopa_raw_value_data();
-    char *name = new char[ident.length() + 1];
-    ("@" + ident).copy(name, ident.length()+1);
+    std::string s = "@" + ident;
+    char* name = new char[s.size() + 1];  // 分配空间（+1 for \0）
+    std::strcpy(name, s.c_str());        // 自动带上 \0
     ret->name = name;
-    ret->ty = (koopa_raw_type_t)(btype->Koop());
+
+    ret->ty = (koopa_raw_type_t)(Koop());
     ret->used_by = slice(KOOPA_RSIK_VALUE);
 
     ret->kind.tag = KOOPA_RVT_FUNC_ARG_REF;
@@ -266,16 +293,21 @@ void* StmtAST::Koop() const {
     ret->ty = type_kind(KOOPA_RTT_UNIT);
     ret->used_by = slice(KOOPA_RSIK_VALUE);
 
+    if(type == RET && expr == nullptr) {
+        ret->kind.tag = KOOPA_RVT_RETURN;
+        blk_list.inst2block(ret);
+    }
+
     if( expr != nullptr || type == BREAK || type == CONTINUE) {
         if(type == RET) {
             ret->kind.tag = KOOPA_RVT_RETURN;
-            if(expr != nullptr)
-                ret->kind.data.ret.value = (const koopa_raw_value_data_t *)expr->Koop();
+            ret->kind.data.ret.value = (const koopa_raw_value_data_t *)expr->Koop();
             blk_list.inst2block(ret);
         } else if(type == VAL) {
             ret->kind.tag = KOOPA_RVT_STORE;
+            LValAST *val = dynamic_cast<LValAST *>(lval.get()); 
             ret->kind.data.store.value = (const koopa_raw_value_data_t *)expr->Koop();
-            ret->kind.data.store.dest = (const koopa_raw_value_data_t *)lval->get_val();
+            ret->kind.data.store.dest = (const koopa_raw_value_data_t *)val->get_val();
             blk_list.inst2block(ret);
         } else if(type == EXP) {
             expr->Koop();       //dont know 
@@ -291,14 +323,14 @@ void* StmtAST::Koop() const {
             int t_e_num = then_else_map[(koopa_raw_basic_block_data_t *)(ret->kind.data.branch.true_bb)];
             char *el_name = new char[7];
             ("\%else_" + std::to_string(t_e_num)).copy(el_name, 7);
-            std::cout << el_name << std::endl;
+            // std::cout << el_name << std::endl;
             el->name = el_name;
             el->params = slice(KOOPA_RSIK_VALUE);
             el->used_by = slice(ret, KOOPA_RSIK_VALUE);
 
             char *end_name = new char[6];
             ("\%end_" + std::to_string(t_e_num)).copy(end_name, 6);
-            std::cout << end_name << std::endl;
+            // std::cout << end_name << std::endl;
             end->name = end_name;
             end->params = slice(KOOPA_RSIK_VALUE);
             end->used_by = slice(KOOPA_RSIK_VALUE);
@@ -469,6 +501,172 @@ void* LValAST::Koop() const {
         ret->kind.tag = KOOPA_RVT_LOAD;
         ret->kind.data.load.src = sym.data.var_sym;
         blk_list.inst2block(ret);
+    } else if(sym.type == ARRAY_SYM) {
+        std::vector<koopa_raw_value_data *> getelemptr_vec;
+        if(ilist != nullptr) {
+            // @arr = alloc [i32, 2]       // @arr 的类型是 *[i32, 2]
+            // %ptr = getelemptr @arr, 1   // %ptr 的类型是 *i32
+            // %value = load %ptr          // %value 的类型是 i32
+
+            for(int i = 0; i < ilist->size(); i++) {
+                koopa_raw_value_data *get = new koopa_raw_value_data();
+                get->name = nullptr;
+                get->used_by = slice(KOOPA_RSIK_VALUE);
+                get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1-i]->Koop();
+    
+                koopa_raw_type_kind *ty = new koopa_raw_type_kind();
+                ty->tag = KOOPA_RTT_POINTER;
+                if(i == 0) {
+                    ty->data.pointer.base = sym.data.array->ty->data.pointer.base->data.array.base;
+                    get->ty = ty;
+                    assert(sym.data.array->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                    get->kind.data.get_elem_ptr.src = sym.data.array;
+                } else {
+                    ty->data.pointer.base = getelemptr_vec[i-1]->ty->data.pointer.base->data.array.base;
+                    get->ty = ty;
+                    assert(getelemptr_vec[i-1]->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                    get->kind.data.get_elem_ptr.src = getelemptr_vec[i-1];
+                }
+                getelemptr_vec.push_back(get);
+                blk_list.inst2block(get);
+            }
+
+            if(getelemptr_vec.back()->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY){
+                // @arr = alloc [[i32, 3], 2]       // @arr 的类型是 *[[i32, 3], 2]
+                // %a1 = getelemptr @arr, 1         // %ptr 的类型是 *[i32, 3]
+                // %a1_ptr = getelemptr %a1, 0      // *i32，数组首地址
+                // reference point  tag != KOOPA_RTT_INT32;
+                koopa_raw_value_data *get = new koopa_raw_value_data();
+                koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+                ty->tag = KOOPA_RTT_POINTER;
+                ty->data.pointer.base = getelemptr_vec.back()->ty->data.pointer.base->data.array.base;
+                
+                get->ty = ty;
+                get->name = nullptr;
+                get->used_by = slice(KOOPA_RSIK_VALUE);
+                get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                assert(getelemptr_vec.back()->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                get->kind.data.get_elem_ptr.src = getelemptr_vec.back();
+                NumberAST zero;
+                zero.num = 0;
+                get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)zero.Koop();
+                blk_list.inst2block(get);
+                ret = get;
+            } else {
+                ret->kind.tag = KOOPA_RVT_LOAD;
+                ret->kind.data.load.src = getelemptr_vec.back();
+                blk_list.inst2block(ret);    
+            }
+        } else {
+            // @arr = alloc [[i32, 3], 2]       // @arr 的类型是 *[[i32, 3], 2]
+            // %p = getelemptr @arr, 0          ; 相当于 a → &a[0]，类型是 *[i32, 3]
+            koopa_raw_value_data *get = new koopa_raw_value_data();
+            koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+            ty->tag = KOOPA_RTT_POINTER;
+            ty->data.pointer.base = sym.data.array->ty->data.pointer.base->data.array.base;
+            
+            get->ty = ty;
+            get->name = nullptr;
+            get->used_by = slice(KOOPA_RSIK_VALUE);
+            get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+            assert(sym.data.array->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+            get->kind.data.get_elem_ptr.src = sym.data.array;
+            NumberAST zero;
+            zero.num = 0;
+            get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)zero.Koop();
+            blk_list.inst2block(get);
+            ret = get;
+        }
+    } else if(sym.type == POINTER){
+    // Key Tip: pointer need use getptr first, the arr[], arr[][1] in funcparam all pointer, so we need use getptr
+    // when we use true array,  arr, arr[1], we only use getelemptr
+
+        koopa_raw_value_data *load = new koopa_raw_value_data();
+        load->name = nullptr;
+        load->used_by = slice(KOOPA_RSIK_VALUE);
+        load->ty = sym.data.pointer->ty->data.pointer.base;
+        load->kind.tag = KOOPA_RVT_LOAD;
+        load->kind.data.load.src = sym.data.pointer;
+        blk_list.inst2block(load);
+        std::vector<koopa_raw_value_data *> get_vec;
+        if(ilist != nullptr) {
+            // @arr = alloc *[i32, 3]        // @arr 的类型是 **[i32, 3]
+            // %ptr1 = load @arr             // %ptr1 的类型是 *[i32, 3]
+            // %ptr2 = getptr %ptr1, 1       // %ptr2 的类型是 *[i32, 3]
+            // %ptr3 = getelemptr %ptr2, 2   // %ptr3 的类型是 *i32
+            // %value = load %ptr3          // %value 的类型是 i32
+
+            for(int i = 0; i < ilist->size(); i++) {
+                koopa_raw_value_data *get = new koopa_raw_value_data();
+                get->name = nullptr;
+                get->used_by = slice(KOOPA_RSIK_VALUE);
+                if(i == 0 ) {   // one getptr, many getelemptr
+                    get->ty = load->ty;
+                    get->kind.tag = KOOPA_RVT_GET_PTR;
+                    get->kind.data.get_ptr.src = load;
+                    get->kind.data.get_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1 - i]->Koop();
+                } else {
+                    koopa_raw_type_kind *ty = new koopa_raw_type_kind();
+                    ty->tag = KOOPA_RTT_POINTER;
+                    ty->data.pointer.base = get_vec[i-1]->ty->data.pointer.base->data.array.base;
+                    get->ty = ty;
+                    get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                    assert(get_vec[i-1]->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                    get->kind.data.get_elem_ptr.src = get_vec[i-1];
+                    get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1 - i]->Koop();
+                }
+                get_vec.push_back(get);
+                blk_list.inst2block(get);
+            }
+            
+            if(get_vec.back()->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY){
+                // @arr = alloc [[i32, 3], 2]       // @arr 的类型是 *[[i32, 3], 2]
+                // %a1 = getelemptr @arr, 1         // %ptr 的类型是 *[i32, 3]
+                // %a1_ptr = getelemptr %a1, 0      // *i32，数组首地址
+                // reference point  tag != KOOPA_RTT_INT32;
+                koopa_raw_value_data *get = new koopa_raw_value_data();
+                koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+                ty->tag = KOOPA_RTT_POINTER;
+                ty->data.pointer.base = get_vec.back()->ty->data.pointer.base->data.array.base;
+                
+                get->ty = ty;
+                get->name = nullptr;
+                get->used_by = slice(KOOPA_RSIK_VALUE);
+                get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                // assert(get_vec.back)
+                assert(get_vec.back()->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                get->kind.data.get_elem_ptr.src = get_vec.back();
+                NumberAST zero;
+                zero.num = 0;
+                get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)zero.Koop();
+                blk_list.inst2block(get);
+                ret = get;
+            } else {
+                ret->kind.tag = KOOPA_RVT_LOAD;
+                ret->kind.data.load.src = get_vec.back();
+                blk_list.inst2block(ret);    
+            }
+        } else {
+            // @arr = alloc [[i32, 3], 2]       // @arr 的类型是 *[[i32, 3], 2]
+            // %ptr1 = load @arr             // %ptr1 的类型是 *[i32, 3]
+            // %p = getptr %ptr1, 0          ; 相当于 a → &a[0]，类型是 *[i32, 3]
+            koopa_raw_value_data *get = new koopa_raw_value_data();
+            koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+            ty->tag = KOOPA_RTT_POINTER;
+            ty->data.pointer.base = sym.data.array->ty->data.pointer.base->data.array.base;
+            
+            get->ty = ty;
+            get->name = nullptr;
+            get->used_by = slice(KOOPA_RSIK_VALUE);
+            get->kind.tag = KOOPA_RVT_GET_PTR;
+            get->kind.data.get_ptr.src = load;
+            NumberAST zero;
+            zero.num = 0;
+            get->kind.data.get_ptr.index = (koopa_raw_value_t)zero.Koop();
+            blk_list.inst2block(get);
+            ret = get;
+        }
     } else {
         assert(false);
     }
@@ -476,7 +674,85 @@ void* LValAST::Koop() const {
 }
 
 void* LValAST::get_val() const {
-    return (void *)sym_list.list_get(ident).data.var_sym;
+    Symbol sym = (sym_list.list_get(ident));
+    if(sym.type == VAR_SYM) {
+        return (void *)sym.data.var_sym;
+    } else if(sym.type == ARRAY_SYM) {
+        // @arr = alloc [i32, 2]         // 同上
+        // %ptr = getelemptr @arr, 1     // 获取第 1 个元素的地址，类型：*i32
+        // store 1, %ptr                 // 把常数 1 存进该地址  <--- this step in Stmt
+
+        std::vector<koopa_raw_value_data *> getelemptr_vec;
+        if(ilist != nullptr) {
+            for(int i = 0; i < ilist->size(); i++) {
+                koopa_raw_value_data *get = new koopa_raw_value_data();
+                get->name = nullptr;
+                get->used_by = slice(KOOPA_RSIK_VALUE);
+                get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1-i]->Koop();
+    
+                koopa_raw_type_kind *ty = new koopa_raw_type_kind();
+                ty->tag = KOOPA_RTT_POINTER;
+                if(i == 0) {
+                    ty->data.pointer.base = sym.data.array->ty->data.pointer.base->data.array.base;
+                    get->ty = ty;
+                    assert(sym.data.array->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                    get->kind.data.get_elem_ptr.src = sym.data.array;
+                } else {
+                    ty->data.pointer.base = getelemptr_vec[i-1]->ty->data.pointer.base->data.array.base;
+                    get->ty = ty;
+                    assert(getelemptr_vec[i-1]->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                    get->kind.data.get_elem_ptr.src = getelemptr_vec[i-1];
+                }
+                getelemptr_vec.push_back(get);
+                blk_list.inst2block(get);
+            }
+            return getelemptr_vec.back();
+        }
+    } else if(sym.type == FUNC || sym.type == CONST_SYM) {
+        std::cout << "left value type wrong" << std::endl;
+        assert(false);
+    } else if(sym.type == POINTER) {
+        // @arr = alloc *[i32, 3]        // @arr 的类型是 **[i32, 3]
+        // %ptr1 = load @arr             // %ptr1 的类型是 *[i32, 3]
+        // %ptr2 = getptr %ptr1, 1       // %ptr2 的类型是 *[i32, 3]
+        // %ptr3 = getelemptr %ptr2, 2   // %ptr3 的类型是 *i32
+        // store 1, %ptr3               ; 将 1 存入该地址  <----- this step in Stmt
+
+        koopa_raw_value_data *load = new koopa_raw_value_data();
+        load->name = nullptr;
+        load->used_by = slice(KOOPA_RSIK_VALUE);
+        load->ty = sym.data.pointer->ty->data.pointer.base;
+        load->kind.tag = KOOPA_RVT_LOAD;
+        load->kind.data.load.src = sym.data.pointer;
+        blk_list.inst2block(load);
+        std::vector<koopa_raw_value_data *> get_vec;
+        for(int i = 0; i < ilist->size(); i++) {
+            koopa_raw_value_data *get = new koopa_raw_value_data();
+            get->name = nullptr;
+            get->used_by = slice(KOOPA_RSIK_VALUE);
+            if(i == 0 ) {   // one getptr, many getelemptr
+                get->ty = load->ty;
+                get->kind.tag = KOOPA_RVT_GET_PTR;
+                get->kind.data.get_ptr.src = load;
+                get->kind.data.get_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1 - i]->Koop();
+            } else {
+                koopa_raw_type_kind *ty = new koopa_raw_type_kind();
+                ty->tag = KOOPA_RTT_POINTER;
+                ty->data.pointer.base = get_vec[i-1]->ty->data.pointer.base;
+                get->ty = ty;
+                get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                assert(get_vec[i-1]->ty->data.pointer.base->tag == KOOPA_RTT_ARRAY);
+                get->kind.data.get_elem_ptr.src = get_vec[i-1];
+                get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)(*ilist)[ilist->size() - 1 - i]->Koop();
+            }
+            get_vec.push_back(get);
+            blk_list.inst2block(get);
+        }
+        return get_vec.back();
+    }
+    assert(false);
+    return nullptr;
 }
 
 
@@ -491,7 +767,10 @@ void* UnaryExpAST::Koop() const {
     } else if(type == OP) {
         koopa_raw_value_data *ret = new koopa_raw_value_data();
         koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
-
+        // @arr = alloc *i32         // @arr 的类型是 **i32
+        // %ptr1 = load @arr         // %ptr1 的类型是 *i32
+        // %ptr2 = getptr %ptr1, 1   // %ptr2 的类型是 *i32
+        // %value = load %ptr2       // %value 的类型是 i32
         NumberAST zero;
         zero.num = 0;
 
@@ -502,7 +781,6 @@ void* UnaryExpAST::Koop() const {
         ret->name = nullptr;
         ret->ty = ty;
         ret->used_by = slice(KOOPA_RSIK_VALUE);
-
 
         ret->kind.data.binary.lhs = (koopa_raw_value_t)zero.Koop();
         ret->kind.data.binary.rhs = (koopa_raw_value_t)uexp->Koop();
@@ -532,7 +810,7 @@ void* UnaryExpAST::Koop() const {
         if(plist != nullptr) {
             std::vector<const void *> args;
 
-            for(auto func = (*plist).rbegin(); func != (*plist).rend(); func ++) {
+            for(auto func = (*plist).begin(); func != (*plist).end(); func ++) {
                 args.push_back((*func)->Koop());
             }
             ret->kind.data.call.args = slice(args, KOOPA_RSIK_VALUE);
@@ -952,11 +1230,21 @@ int LOrExpAST::Calcu() const {
 void* ConstDeclAST::Koop() const {
     // koopa_raw_type_t type = (const koopa_raw_type_t)btype->Koop();
 
-    for(auto cdef = clist->begin(); cdef != clist->end(); cdef++) {
+    for(auto cdef = clist->rbegin(); cdef != clist->rend(); cdef++) {
         (*cdef)->Koop();
     }
     return nullptr;
 }
+
+void* ConstDeclAST::Koop(std::vector<const void*>& insts) const {
+    // koopa_raw_type_t type = (const koopa_raw_type_t)btype->Koop();
+
+    for(auto cdef = clist->rbegin(); cdef != clist->rend(); cdef++) {
+        (*cdef)->Koop(insts);
+    }
+    return nullptr;
+}
+
 
 void* BTypeAST::Koop() const {
     koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
@@ -970,8 +1258,152 @@ void* BTypeAST::Koop() const {
 
 
 void* ConstDefAST::Koop() const {
-    int val = cival->Calcu();
-    sym_list.list_add(ident.c_str(), Symbol(SymType::CONST_SYM, val));
+    if(cexp == nullptr) {
+        int val = cival->Calcu();
+        sym_list.list_add(ident.c_str(), Symbol(SymType::CONST_SYM, val));
+        return nullptr;
+    } else {
+        koopa_raw_value_data *ret = new koopa_raw_value_data();
+        koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
+    
+        std::string full_name = "@" + ident + "_" + std::to_string(sym_list.cur_depth());
+        char *name = new char[full_name.length() + 1];  // +1 for '\0'
+        std::strcpy(name, full_name.c_str());          // 自动加 '\0'
+        ret->name = name;
+        ret->used_by = used;
+        ret->kind.tag = KOOPA_RVT_ALLOC;
+        blk_list.inst2block(ret);
+    
+        std::vector<int> index_vec;
+        for(auto index = cexp->rbegin(); index != cexp->rend(); index++) {
+            index_vec.push_back((*index)->Calcu());
+        }
+        koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+        ty->tag = KOOPA_RTT_POINTER;
+        ty->data.pointer.base = array_type_kind(KOOPA_RTT_INT32, index_vec);
+        ret->ty = ty;
+
+        Symbol sym = Symbol(SymType::ARRAY_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
+        int array_size = 1;
+        for(int i = 0; i < index_vec.size(); i++) {
+            array_size *= index_vec[i];
+        }
+
+        std::vector<const void*> val_vec;
+        InitValAST *initval = dynamic_cast<InitValAST *>(cival.get());
+        if(initval->type == InitValAST::EMPTY) {        // x[2] = {}
+            koopa_raw_value_data *store = new koopa_raw_value_data();
+            store->ty = type_kind(KOOPA_RTT_UNIT);
+            store->name = nullptr;
+            store->used_by = slice(KOOPA_RSIK_VALUE);
+            store->kind.tag = KOOPA_RVT_STORE;
+            store->kind.data.store.dest = (koopa_raw_value_t)ret;
+            store->kind.data.store.value = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+            blk_list.inst2block(store);
+        } else {
+            initval->get_complete_val(val_vec, index_vec, 0);   // val_vec full of NumberAST
+            
+            for(int i = 0; i< val_vec.size(); i++) {            // put every entry on store
+                std::vector<koopa_raw_value_data *> getelemptr_vec;
+                getelemptr_vec.clear();
+                int tmp_index = i;
+                int tmp_size = array_size;
+                for(int j = 0; j < index_vec.size() ; j++) {  // index front to back x[1][2] ---> ptr 1 + ptr 2
+                    // @arr = alloc [[i32, 3], 2]    // @arr 的类型是 *[[i32, 3], 2]
+                    // %ptr1 = getelemptr @arr, 1    // %ptr1 的类型是 *[i32, 3]
+                    // %ptr2 = getelemptr %ptr1, 2   // %ptr2 的类型是 *i32
+                    // %value = load %ptr2           // %value 的类型是 i32
+                    tmp_size /= index_vec[j];
+                    tmp_index = tmp_index/tmp_size;
+                    int tmp = tmp_index;
+                    tmp_index = tmp_index % tmp_size;
+
+                    koopa_raw_value_data *get = new koopa_raw_value_data();
+                    get->name = nullptr;
+                    get->ty = type_kind(KOOPA_RTT_INT32);
+                    get->used_by = slice(KOOPA_RSIK_VALUE);
+                    get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                    get->kind.data.get_elem_ptr.src = (j == 0) ? ret : getelemptr_vec[j-1];
+                    NumberAST num;
+                    num.num = tmp;
+                    get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)num.Koop();
+                    getelemptr_vec.push_back(get);
+                    blk_list.inst2block(get);
+                }
+                koopa_raw_value_data *store = new koopa_raw_value_data();
+                store->ty = type_kind(KOOPA_RTT_UNIT);
+                store->name = nullptr;
+                store->used_by = slice(KOOPA_RSIK_VALUE);
+                store->kind.tag = KOOPA_RVT_STORE;
+                store->kind.data.store.dest = getelemptr_vec[index_vec.size() - 1];
+                store->kind.data.store.value = (koopa_raw_value_t)val_vec[i];
+                blk_list.inst2block(store);    
+            }
+        }
+        return nullptr;
+    }
+    return nullptr;
+}
+
+void* ConstDefAST::Koop(std::vector<const void*>& insts) const {
+    if(cexp == nullptr) {
+        koopa_raw_value_data *ret = new koopa_raw_value_data();
+        koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
+    
+        std::string full_name = "@" + ident;
+        char *name = new char[full_name.length() + 1];  // +1 for '\0'
+        std::strcpy(name, full_name.c_str());          // 自动拷贝并终止
+        ret->name = name;
+        ret->used_by = used;
+        ret->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
+        ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
+        // assert(cival != nullptr);
+        InitValAST *initval = dynamic_cast<InitValAST *>(cival.get());
+        insts.push_back(ret);
+        koopa_raw_value_data * init = new koopa_raw_value_data();
+        init->name = nullptr;
+        init->used_by = slice(KOOPA_RSIK_VALUE);
+        init->ty = type_kind(KOOPA_RTT_INT32);
+        init->kind.tag = KOOPA_RVT_INTEGER;
+        init->kind.data.integer.value = initval->exp->Calcu();
+        ret->kind.data.global_alloc.init = init;
+        sym_list.list_add(ident.c_str(), Symbol(SymType::CONST_SYM, init->kind.data.integer.value));
+        return nullptr;
+    } else {
+        koopa_raw_value_data *ret = new koopa_raw_value_data();
+        koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
+    
+        std::string full_name = "@" + ident;
+        char *name = new char[full_name.length() + 1];  // +1 for '\0'
+        std::strcpy(name, full_name.c_str());          // 自动拷贝并终止
+        ret->name = name;
+        ret->used_by = used;
+        ret->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
+        std::vector<int> index_vec;
+        for(auto index = cexp->rbegin(); index != cexp->rend(); index++) {
+            index_vec.push_back((*index)->Calcu());
+        }
+        koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+        ty->tag = KOOPA_RTT_POINTER;
+        ty->data.pointer.base = array_type_kind(KOOPA_RTT_INT32, index_vec);
+        ret->ty = ty;
+
+        insts.push_back(ret);
+        Symbol sym = Symbol(SymType::ARRAY_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
+
+        // ret->kind.data.global_alloc.init = (koopa_raw_value_t)ival->Koop();
+        std::vector<const void*> val_vec;
+        InitValAST *initval = dynamic_cast<InitValAST *>(cival.get());
+        if(initval->type == InitValAST::EMPTY) {
+            ret->kind.data.global_alloc.init = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+        } else {
+            initval->get_complete_val(val_vec, index_vec, 0); // val_vec full of NumberAST
+            ret->kind.data.global_alloc.init = (koopa_raw_value_t)initval->Koop(val_vec, index_vec, 0);
+        }
+        return nullptr;
+    }
     return nullptr;
 }
 
@@ -979,7 +1411,7 @@ void* ConstDefAST::Koop() const {
 void* VarDeclAST::Koop() const {
     // koopa_raw_type_t type = (const koopa_raw_type_t)btype->Koop();
 
-    for(auto vdef = vlist->begin(); vdef != vlist->end(); vdef++) {
+    for(auto vdef = vlist->rbegin(); vdef != vlist->rend(); vdef++) {
         (*vdef)->Koop();
     }
     return nullptr;
@@ -988,7 +1420,7 @@ void* VarDeclAST::Koop() const {
 void* VarDeclAST::Koop(std::vector<const void*> &insts) const {
     // koopa_raw_type_t type = (const koopa_raw_type_t)btype->Koop();
 
-    for(auto vdef = vlist->begin(); vdef != vlist->end(); vdef++) {
+    for(auto vdef = vlist->rbegin(); vdef != vlist->rend(); vdef++) {
         (*vdef)->Koop(insts);
     }
     return nullptr;
@@ -999,26 +1431,130 @@ void* VarDefAST::Koop() const {
     koopa_raw_value_data *ret = new koopa_raw_value_data();
     koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
 
-    char *name = new char[ident.length() + 1 + 2];
-    ("@" + ident + "_" + std::to_string(sym_list.cur_depth())).copy(name, ident.length()+1+2);
+    std::string full_name = "@" + ident + "_" + std::to_string(sym_list.cur_depth());
+    char *name = new char[full_name.length() + 1];  // +1 for '\0'
+    std::strcpy(name, full_name.c_str());          // 复制并加终止符
     ret->name = name;
-    ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
     ret->used_by = used;
     ret->kind.tag = KOOPA_RVT_ALLOC;
     blk_list.inst2block(ret);
+    if(exp == nullptr) {
+        ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
+        Symbol sym = Symbol(SymType::VAR_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
 
-    Symbol sym = Symbol(SymType::VAR_SYM, ret);
-    sym_list.list_add(ident.c_str(), sym);
+        if(type == VAL) {
+            koopa_raw_value_data *store = new koopa_raw_value_data();
+            store->ty = type_kind(KOOPA_RTT_INT32);
+            store->name = nullptr;
+            store->used_by = slice(KOOPA_RSIK_VALUE);
+            store->kind.tag = KOOPA_RVT_STORE;
+            store->kind.data.store.dest = (koopa_raw_value_t)ret;
+            store->kind.data.store.value = (koopa_raw_value_t)ival->Koop();
+            blk_list.inst2block(store);
+        }
+    } else {
+        std::vector<int> index_vec;
+        for(auto index = exp->rbegin(); index != exp->rend(); index++) {
+            index_vec.push_back((*index)->Calcu());
+            // cout << to_string(index_vec.back()) << endl;
+        }
+        // cout << to_string(exp->size()) << endl;
+        koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+        ty->tag = KOOPA_RTT_POINTER;
+        ty->data.pointer.base = array_type_kind(KOOPA_RTT_INT32, index_vec);
+        ret->ty = ty;
 
-    if(type == VAL) {
-        koopa_raw_value_data *store = new koopa_raw_value_data();
-        store->ty = type_kind(KOOPA_RTT_INT32);
-        store->name = nullptr;
-        store->used_by = slice(KOOPA_RSIK_VALUE);
-        store->kind.tag = KOOPA_RVT_STORE;
-        store->kind.data.store.dest = (koopa_raw_value_t)ret;
-        store->kind.data.store.value = (koopa_raw_value_t)ival->Koop();
-        blk_list.inst2block(store);
+        Symbol sym = Symbol(SymType::ARRAY_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
+        int array_size = 1;
+        for(int i = 0; i < index_vec.size(); i++) {
+            array_size *= index_vec[i];
+        }
+        if(type == VAL) {
+            std::vector<const void*> val_vec;
+            InitValAST *initval = dynamic_cast<InitValAST *>(ival.get());
+            if(initval->type == InitValAST::EMPTY) {        // x[2] = {}
+                koopa_raw_value_data *store = new koopa_raw_value_data();
+                store->ty = type_kind(KOOPA_RTT_UNIT);
+                store->name = nullptr;
+                store->used_by = slice(KOOPA_RSIK_VALUE);
+                store->kind.tag = KOOPA_RVT_STORE;
+                store->kind.data.store.dest = (koopa_raw_value_t)ret;
+                store->kind.data.store.value = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+                blk_list.inst2block(store);    
+            } else {
+                initval->get_complete_val(val_vec, index_vec, 0);   // val_vec full of NumberAST
+                // assert(ret->ty->data.array.len != 0);
+                for(int i = 0; i< val_vec.size(); i++) {            // put every entry on store
+                    std::vector<koopa_raw_value_data *> getelemptr_vec;
+                    getelemptr_vec.clear();
+                    int tmp_index = i;
+                    int tmp_size = array_size;
+                    for(int j = 0; j <  index_vec.size(); j++) {  // index front to back x[1][2] ---> ptr 1 + ptr 2
+                        // @arr = alloc [[i32, 3], 2]    // @arr 的类型是 *[[i32, 3], 2]
+                        // %ptr1 = getelemptr @arr, 1    // %ptr1 的类型是 *[i32, 3]
+                        // %ptr2 = getelemptr %ptr1, 2   // %ptr2 的类型是 *i32
+                        // %value = load %ptr2           // %value 的类型是 i32
+
+                        tmp_size /= index_vec[j];
+                        // tmp_index = tmp_index/tmp_size;
+                        int tmp = tmp_index/tmp_size;
+                        tmp_index = tmp_index % tmp_size;
+
+                        koopa_raw_value_data *get = new koopa_raw_value_data();
+                        // koopa_raw_type_kind *ty = new koopa_raw_type_kind();
+                        // if(tmp_vec.size() != 0) {
+                        //     // ty->tag = KOOPA_RTT_ARRAY;
+                        //     ty = array_type_kind(KOOPA_RTT_INT32, tmp_vec);    
+                        // } else {
+                        //     ty = type_kind(KOOPA_RTT_INT32);
+                        // }
+                        // if(j > 0) {
+                        //     ty->tag = KOOPA_RTT_ARRAY;
+                        //     ty->data.array.base = getelemptr_vec[j-1]->ty->data.array.base;
+                        // }
+                        // else {
+                        //     ty->tag = KOOPA_RTT_ARRAY;
+                        //     ty->data.array.base = ret->ty->data.pointer.base->data.array.base;
+                        // }
+                            
+                        get->name = nullptr;
+                        get->ty = type_kind(KOOPA_RTT_INT32);
+                        get->used_by = slice(KOOPA_RSIK_VALUE);
+                        get->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
+                        
+                        get->kind.data.get_elem_ptr.src = (j == 0) ? ret : getelemptr_vec[j-1];
+                        // if(get->ty->data.array.len == 0 && get->ty->tag == KOOPA_RTT_ARRAY){
+                        //     std::cout << to_string(j) <<std::endl;
+                        //     assert(get->ty->data.array.len != 0);
+                        // }
+                        NumberAST num;
+                        num.num = tmp;
+                        get->kind.data.get_elem_ptr.index = (koopa_raw_value_t)num.Koop();
+                        getelemptr_vec.push_back(get);
+                        blk_list.inst2block(get);
+                    }
+                    koopa_raw_value_data *store = new koopa_raw_value_data();
+                    store->ty = type_kind(KOOPA_RTT_UNIT);
+                    store->name = nullptr;
+                    store->used_by = slice(KOOPA_RSIK_VALUE);
+                    store->kind.tag = KOOPA_RVT_STORE;
+                    store->kind.data.store.dest = getelemptr_vec[index_vec.size() - 1];
+                    store->kind.data.store.value = (koopa_raw_value_t)val_vec[i];
+                    blk_list.inst2block(store);    
+                }
+            }
+        } else if(type == IDE) {
+            koopa_raw_value_data *store = new koopa_raw_value_data();
+            store->ty = type_kind(KOOPA_RTT_UNIT);
+            store->name = nullptr;
+            store->used_by = slice(KOOPA_RSIK_VALUE);
+            store->kind.tag = KOOPA_RVT_STORE;
+            store->kind.data.store.dest = (koopa_raw_value_t)ret;
+            store->kind.data.store.value = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+            blk_list.inst2block(store);
+        }
     }
     return nullptr;
 }
@@ -1027,26 +1563,194 @@ void* VarDefAST::Koop(std::vector<const void*>& insts) const {
     koopa_raw_value_data *ret = new koopa_raw_value_data();
     koopa_raw_slice_t used = slice(ret, KOOPA_RSIK_VALUE);
 
-    char *name = new char[ident.length() + 1];
-    ("@" + ident).copy(name, ident.length()+1);
+    std::string s = "@" + ident;
+    char* name = new char[s.size() + 1];
+    std::strcpy(name, s.c_str());  // 自动带上 '\0'
     ret->name = name;
-    ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
+
     ret->used_by = used;
     ret->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
-    // ret->kind.data.global_alloc.init = 
-    insts.push_back(ret);
-    Symbol sym = Symbol(SymType::VAR_SYM, ret);
-    sym_list.list_add(ident.c_str(), sym);
+    if(exp == nullptr) {
+        ret->ty = pointer_type_kind(KOOPA_RTT_INT32);
+        
+        // ret->kind.data.global_alloc.init = 
+        insts.push_back(ret);
+        Symbol sym = Symbol(SymType::VAR_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
+    
+        if(type == VAL) {
+            ret->kind.data.global_alloc.init = (koopa_raw_value_t)ival->Koop();
+        } else if(type == IDE) {
+            NumberAST zero;
+            zero.num = 0;
+            ret->kind.data.global_alloc.init = (koopa_raw_value_t)(zero.Koop());
+        }
+        return nullptr;    
+    } else {       //array
+        std::vector<int> index_vec;
+        for(auto index = exp->rbegin(); index != exp->rend(); index++) {
+            index_vec.push_back((*index)->Calcu());
+        }
+        koopa_raw_type_kind_t *ty = new koopa_raw_type_kind_t();
+        ty->tag = KOOPA_RTT_POINTER;
+        ty->data.pointer.base = array_type_kind(KOOPA_RTT_INT32, index_vec);
+        ret->ty = ty;
 
-    if(type == VAL) {
-        ret->kind.data.global_alloc.init = (koopa_raw_value_t)ival->Koop();
-    } else if(type == IDE) {
-        NumberAST zero;
-        zero.num = 0;
-        ret->kind.data.global_alloc.init = (koopa_raw_value_t)(zero.Koop());
+        insts.push_back(ret);
+        Symbol sym = Symbol(SymType::ARRAY_SYM, ret);
+        sym_list.list_add(ident.c_str(), sym);
+
+        if(type == VAL) {
+            // ret->kind.data.global_alloc.init = (koopa_raw_value_t)ival->Koop();
+            std::vector<const void*> val_vec;
+            InitValAST *initval = dynamic_cast<InitValAST *>(ival.get());
+            if(initval->type == InitValAST::EMPTY) {
+                ret->kind.data.global_alloc.init = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+            } else {
+                initval->get_complete_val(val_vec, index_vec, 0); // val_vec full of NumberAST
+                ret->kind.data.global_alloc.init = (koopa_raw_value_t)initval->Koop(val_vec, index_vec, 0);
+            }
+        } else if(type == IDE) {
+            ret->kind.data.global_alloc.init = zero_value(array_type_kind(KOOPA_RTT_INT32, index_vec));
+        }
+        return nullptr;
     }
     return nullptr;
 }
 
+void* InitValAST::Koop() const {
+    if(type != EXP)
+        assert(false);
+    return exp->Koop();
+}
 
+int InitValAST::Calcu() const {
+    if(type != EXP)
+        assert(false);
+    return exp->Calcu();
+}
 
+void* InitValAST::Koop(std::vector<const void*> &val_vec, std::vector<int> index_vec, int depth) const {
+    std::vector<const void *> *part_val = new std::vector<const void *>();
+    if(depth  == index_vec.size() - 1) {
+        for(int i = 0; i < index_vec.back(); i++) {
+            part_val->push_back(val_vec.front());
+            val_vec.erase(val_vec.begin());
+        }
+    } else {
+        for(int i = 0; i < index_vec[depth]; i++) {
+            part_val->push_back(Koop(val_vec, index_vec, depth + 1));
+        }
+    }
+
+    koopa_raw_value_data *ret = new koopa_raw_value_data_t();
+    std::vector<int> part_vec;
+    part_vec.clear();
+    for(int i = depth; i< index_vec.size(); i++) {
+        part_vec.push_back(index_vec[i]);
+    }
+    ret->ty = array_type_kind(KOOPA_RTT_INT32, part_vec);
+    ret->name = nullptr;
+    ret->used_by = slice(KOOPA_RSIK_VALUE);
+    ret->kind.tag = KOOPA_RVT_AGGREGATE;
+    ret->kind.data.aggregate.elems = slice(*part_val, KOOPA_RSIK_VALUE);
+    return ret;
+}
+
+// [2][3] = {1,2,{3,4}} ---> { {1, 2, 0} , {3, 4, 0} }
+void InitValAST::get_complete_val(std::vector<const void*> &val_vec, std::vector<int> index_vec, int depth) {
+    int size = index_vec.back();
+    int length = val_vec.size();
+    int all_size = 1;
+    for (int i = 0; i < index_vec.size(); i++) {
+        all_size *= index_vec[i];
+    }
+    
+    assert(val_vec.size() <= all_size);
+
+    if(type != EMPTY) {
+        if(depth == 0) {
+            for(auto ival = (*ilist).begin(); ival != (*ilist).end() &&
+                (val_vec.size() - length) <= all_size; ival ++) {
+                InitValAST *initval = dynamic_cast<InitValAST *>((*ival).get());
+                if(initval->type == InitValAST::EXP) {
+                    NumberAST num;
+                    num.num = initval->exp->Calcu();
+                    // std::cout << num.num << std::endl;
+                    val_vec.push_back(num.Koop());
+                } else if (initval->type == InitValAST::LIST || initval->type == InitValAST::EMPTY) {
+                    initval->get_complete_val(val_vec, index_vec,depth+1);
+                }
+            }
+        } else if(depth == 1) {
+            if(length % size == 0) {
+                for(auto ival = (*ilist).begin(); ival != (*ilist).end() &&
+                    (val_vec.size() - length) <= size; ival ++) {           // no more than size times
+                    InitValAST *initval = dynamic_cast<InitValAST *>((*ival).get());
+                    if(initval->type == InitValAST::EXP) {
+                        NumberAST num;
+                        num.num = initval->exp->Calcu();
+                        // std::cout << num.num << std::endl;
+                        val_vec.push_back(num.Koop());
+                    } else if (initval->type == InitValAST::LIST || initval->type == InitValAST::EMPTY) {
+                        initval->get_complete_val(val_vec, index_vec,depth + 1);
+                    }
+                }
+            } else {
+                auto ival = (*ilist).begin();  // one time
+                InitValAST *initval = dynamic_cast<InitValAST *>((*ival).get());
+                if(initval->type == InitValAST::EXP) {
+                    NumberAST num;
+                    num.num = initval->exp->Calcu();
+                    // std::cout << num.num << std::endl;
+                    val_vec.push_back(num.Koop());
+                } else if (initval->type == InitValAST::LIST || initval->type == InitValAST::EMPTY) {
+                    initval->get_complete_val(val_vec, index_vec,depth + 1);
+                }
+            }
+        } else {
+            auto ival = (*ilist).begin();  // one time
+            InitValAST *initval = dynamic_cast<InitValAST *>((*ival).get());
+            if(initval->type == InitValAST::EXP) {
+                NumberAST num;
+                num.num = initval->exp->Calcu();
+                // std::cout << num.num << std::endl;
+                val_vec.push_back(num.Koop());
+            } else if (initval->type == InitValAST::LIST || initval->type == InitValAST::EMPTY) {
+                initval->get_complete_val(val_vec, index_vec,depth + 1);
+            }
+        }
+    } else {
+        if(length % size == 0) {
+            for(int i = 0; i<size; i++) {
+                NumberAST zero;
+                zero.num = 0;
+                // std::cout << zero.num << std::endl;
+                val_vec.push_back(zero.Koop());
+            }
+        } else {
+            NumberAST zero;
+            zero.num = 0;
+            // std::cout << zero.num << std::endl;
+            val_vec.push_back(zero.Koop());
+        }
+    }
+
+    assert(val_vec.size() <= all_size);
+    if(depth == 0) {
+        while (val_vec.size() != all_size) {
+            NumberAST zero;
+            zero.num = 0;
+            // std::cout << zero.num << std::endl;
+            val_vec.push_back(zero.Koop());
+        }
+    } else if(depth == 1) {
+        while (val_vec.size() % size != 0) {
+            NumberAST zero;
+            zero.num = 0;
+            // std::cout << zero.num << std::endl;
+            val_vec.push_back(zero.Koop());
+        }
+    }
+    return;
+}

@@ -49,6 +49,10 @@ class BaseAST
             return nullptr;
         }
 
+        virtual void* Koop(std::vector<const void*> &val_vec, std::vector<int> index_vec, int depth) const {
+            return nullptr;
+        }
+
         virtual int Calcu() const { return 0; }
 };
 
@@ -111,9 +115,11 @@ class FuncDefAST : public BaseAST {
 
 class FuncFParamAST : public BaseAST {
     public:
+        enum {VAR, ARRAY} type;
         std::unique_ptr<BaseAST> btype;
         std::string ident;
-    
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> ilist;
+
         void Dump() const override {}
         // void* Koop(size_t index) const;
         void* Koop() const override;
@@ -206,6 +212,8 @@ class PrimaryExpAST : public BaseAST {
 class LValAST : public BaseAST {
     public:
         std::string ident;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> ilist;
+
         void Dump() const override{}
         // void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
         void* Koop() const override;
@@ -330,9 +338,9 @@ class ConstDeclAST : public BaseAST {
         std::unique_ptr<BaseAST> btype;
         std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> clist;
         
-        
         void Dump() const override{}
         void* Koop() const override;
+        void* Koop(std::vector<const void*>& insts) const override;
         // void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
 };
 
@@ -350,11 +358,28 @@ class ConstDefAST : public BaseAST {
     public:
         std::string ident;
         std::unique_ptr<BaseAST> cival;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> cexp;
 
         void Dump() const override{}
         void* Koop() const override;
+        void* Koop(std::vector<const void*>& insts) const override;
         // void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
 };
+
+class InitValAST : public BaseAST {
+    public:
+        enum {LIST, EMPTY, EXP} type;
+        std::unique_ptr<BaseAST> exp;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> ilist;
+
+        void Dump() const override{}
+        void* Koop(std::vector<const void*> &val_vec, std::vector<int> index_vec, int depth) const override;
+        void get_complete_val(std::vector<const void*> &val_vec, std::vector<int> index_vec, int depth);
+        void* Koop() const override;
+        int Calcu() const override;
+        // void* Koop(koopa_raw_slice_t used_by, std::vector<const void*>& insts) const override;
+};
+
 
 class VarDeclAST : public BaseAST {
     public:
@@ -372,6 +397,7 @@ class VarDefAST : public BaseAST {
         enum {IDE, VAL} type;
         std::string ident;
         std::unique_ptr<BaseAST> ival;
+        std::unique_ptr<std::vector<std::unique_ptr<BaseAST>>> exp;
         
         void Dump() const override{}
         void* Koop() const override;

@@ -47,10 +47,27 @@ int BaseRSICV::inst_size(koopa_raw_value_t inst, int *call_num, int *max_len) {
         return 0;
     case KOOPA_RTT_POINTER:
         return 4;
+    case KOOPA_RTT_ARRAY:
+        return array_size_cal(inst->ty);
     default:
         return 0;
     }
     return 0;
+}
+
+int BaseRSICV::type_size(koopa_raw_type_t ty) {
+    switch (ty->tag) {
+    case KOOPA_RTT_INT32:
+        return 4;
+    case KOOPA_RTT_UNIT:
+        return 0;
+    case KOOPA_RTT_POINTER:
+        return 4;
+    case KOOPA_RTT_ARRAY:
+        return array_size_cal(ty);
+    default:
+        return 0;
+    }
 }
 
 void BaseRSICV::Env::reg_init() {
@@ -97,7 +114,13 @@ std::string BaseRSICV::reg_load(koopa_raw_value_t value, std::string reg) {
         ret += "\tli " + reg + ", " + std::to_string(value->kind.data.integer.value) + "\n";
     } else {
         int offset = env.get_offset(value);
-        ret += "\tlw " + reg + ", " + std::to_string(offset) + "(sp)\n";
+        if(offset < 2048 && offset >= -2048)
+            ret += "\tlw " + reg + ", " + std::to_string(offset) + "(sp)\n";
+        else {
+            ret += "\tli t3, " + std::to_string(offset) + "\n";
+            ret += "\tadd t3, sp, t3\n";
+            ret += "\tlw " + reg + ", 0(t3)\n";
+        }
     }
     return ret;
 }
@@ -120,10 +143,15 @@ int BaseRSICV::Env::get_offset(koopa_raw_value_t value) {
     if(stack_offset_map.find(value) != stack_offset_map.end())
         return stack_offset_map[value];
     else {
-        if(value->ty->tag == KOOPA_RTT_UNIT)
+        int size;
+        if(value->kind.tag == KOOPA_RVT_ALLOC)
+            size = base_rsi_cv->type_size(value->ty->data.pointer.base);
+        else
+            size = base_rsi_cv->type_size(value->ty);
+        if(size == 0)
             return -1;
         stack_offset_map[value] = cur_offset;
-        cur_offset += 4;
+        cur_offset += size;
         return stack_offset_map[value];
     }
     return -1;
@@ -131,11 +159,23 @@ int BaseRSICV::Env::get_offset(koopa_raw_value_t value) {
 
 std::string BaseRSICV::store_offset(int addr, std::string reg) {
     std::string ret = "";
-    ret += "\tsw " + reg + ", " + std::to_string(addr) + "(sp)\n";
-
+    if(addr < 2048 && addr >= -2048)
+        ret += "\tsw " + reg + ", " + std::to_string(addr) + "(sp)\n";
+    else {
+        ret += "\tli t3, " + std::to_string(addr) + "\n";
+        ret += "\tadd t3, sp, t3\n";
+        ret += "\tsw " + reg + ", 0(t3)\n";
+    }
     return ret;
 }
 
+
+int BaseRSICV::array_size_cal(koopa_raw_type_t ty) {
+    if(ty->tag == KOOPA_RTT_ARRAY)
+        return array_size_cal(ty->data.array.base) * ty->data.array.len;
+    else
+        return 4;
+}
 
 
 void BaseRSICV::build(koopa_raw_program_t raw_prog) {
@@ -147,6 +187,7 @@ std::string BaseRSICV::Visit(const koopa_raw_program_t &program) {
     std::string ret = "";
     // 访问所有全局变量
     if(program.values.len > 0) {
+        ret += "\t.data\n";
         ret += Visit(program.values);
     }
     // 访问所有函数
@@ -203,7 +244,12 @@ std::string BaseRSICV::Visit(const koopa_raw_function_t &func) {
         if(sub_sp % 16 != 0)
         sub_sp += 16 - (sub_sp % 16);
         env.stack_init(sub_sp, max_len);
-        ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+        if(sub_sp < 2048 && sub_sp >= -2048)
+            ret += "\taddi sp, sp, -" + std::to_string(sub_sp) + "\n";
+        else {
+            ret += "\tli t0, " + std::to_string(sub_sp) + "\n";
+            ret += "\tadd sp, sp, t0\n";
+        }
 
         if(ra_flag == true) {
             ret += store_offset(sub_sp-4, "ra");
@@ -268,6 +314,18 @@ std::string BaseRSICV::Visit(const koopa_raw_value_t &value) {
 
     case KOOPA_RVT_GLOBAL_ALLOC:
         ret += Visit_GLOBAL(value);
+        break;
+    
+    case KOOPA_RVT_GET_ELEM_PTR:
+        ret += Visit(kind.data.get_elem_ptr);
+        break;
+
+    case KOOPA_RVT_GET_PTR:
+        ret += Visit(kind.data.get_ptr);
+        break;
+
+    case KOOPA_RVT_AGGREGATE:
+        ret += Visit(kind.data.aggregate);
         break;
 
     default:
@@ -365,20 +423,49 @@ std::string BaseRSICV::Visit(const koopa_raw_binary_t &binary) {
 std::string BaseRSICV::Visit(const koopa_raw_return_t &raw) {
     std::string ret = "";
     if(raw.value == nullptr) {
-        if(env.call_in_func == true)
-            ret += "\tlw ra, " + std::to_string(env.stack_size - 4) + "(sp)\n";
-        if(env.stack_size > 0)
-            ret += "\taddi sp, sp, " + std::to_string(env.stack_size) + "\n";
+        if(env.call_in_func == true) {
+            if(env.stack_size - 4 < 2048 && env.stack_size - 4 >= -2048)
+                ret += "\tlw ra, " + std::to_string(env.stack_size - 4) + "(sp)\n";
+            else {
+                ret += "\tli t0," + std::to_string(env.stack_size - 4) + "\n";
+                ret += "\tadd t0, sp, t0\n";
+                ret += "\tlw ra, 0(t0)\n";
+            }
+        }
+        if(env.stack_size > 0){
+            if(env.stack_size < 2048 && env.stack_size >= -2048)
+                ret += "\taddi sp, sp, " + std::to_string(env.stack_size) + "\n";
+            else {
+                ret += "\tli t0, " + std::to_string(env.stack_size) + "\n";
+                ret += "\tadd sp, sp, t0\n";
+            }
+        }
         ret += "\tret\n\n";
         return ret;
     }
 
     // int offset = env.get_offset(raw.value);
-    ret += reg_load(raw.value, "a0");
-    if(env.call_in_func == true)
-        ret += "\tlw ra, " + std::to_string(env.stack_size - 4) + "(sp)\n";
-    if(env.stack_size > 0)
-        ret += "\taddi sp, sp, " + std::to_string(env.stack_size) + "\n";
+    // if(raw.value->kind.tag == KOOPA_RVT_LOAD)
+    //     ret += reg_load(raw.value->kind.data.load.src, "a0");
+    // else
+        ret += reg_load(raw.value, "a0");
+    if(env.call_in_func == true) {
+        if(env.stack_size - 4 < 2048 && env.stack_size - 4 >= -2048)
+            ret += "\tlw ra, " + std::to_string(env.stack_size - 4) + "(sp)\n";
+        else {
+            ret += "\tli t0," + std::to_string(env.stack_size - 4) + "\n";
+            ret += "\tadd t0, sp, t0\n";
+            ret += "\tlw ra, 0(t0)\n";
+        }
+    }
+    if(env.stack_size > 0){
+        if(env.stack_size < 2048 && env.stack_size >= -2048)
+            ret += "\taddi sp, sp, " + std::to_string(env.stack_size) + "\n";
+        else {
+            ret += "\tli t0, " + std::to_string(env.stack_size) + "\n";
+            ret += "\tadd sp, sp, t0\n";
+        }
+    }
     ret += "\tret\n\n";
     return ret;
 }
@@ -393,8 +480,6 @@ std::string BaseRSICV::Visit(const koopa_raw_load_t &load) {
         ret += store_offset(addr, rd);
         return ret;
     }
-
-    
 
     ret += reg_load(load.src, rd);
     ret += store_offset(addr, rd);
@@ -425,6 +510,14 @@ std::string BaseRSICV::Visit(const koopa_raw_store_t &store) {
         }
         return ret;
     }
+    
+    if(store.value->kind.tag == KOOPA_RVT_GET_ELEM_PTR || store.value->kind.tag == KOOPA_RVT_GET_PTR) {
+        ret += reg_load(store.dest, "t1");
+        ret += reg_load(store.value, "t0");
+        ret += "\tsw t0, 0(t1)\n";
+        return ret;
+    }
+    
     ret += reg_load(store.value, rd);
     ret += store_offset(addr, rd);
     
@@ -482,9 +575,122 @@ std::string BaseRSICV::Visit(const koopa_raw_call_t &call) {
 
 std::string BaseRSICV::Visit_GLOBAL(const koopa_raw_value_t &value) {
     std::string ret = "";
-    ret += "\t.data\n";
     ret += "\t.global " + std::string(value->name + 1) + "\n";
     ret += std::string(value->name + 1) + ":\n";
-    ret += "\t.word " + std::to_string(value->kind.data.global_alloc.init->kind.data.integer.value) + "\n\n";
+    if(value->kind.data.global_alloc.init->kind.tag == KOOPA_RVT_INTEGER)
+        ret += "\t.word " + std::to_string(value->kind.data.global_alloc.init->kind.data.integer.value) + "\n\n";
+    else if(value->kind.data.global_alloc.init->kind.tag == KOOPA_RVT_ZERO_INIT) {
+        int size = array_size_cal(value->ty->data.pointer.base);
+        ret += "\t.zero " + std::to_string(size) + "\n\n";
+    } else if(value->kind.data.global_alloc.init->kind.tag == KOOPA_RVT_AGGREGATE) {
+        ret += Visit(value->kind.data.global_alloc.init->kind.data.aggregate);
+    }
+    return ret;
+}
+
+std::string BaseRSICV::Visit(const koopa_raw_get_elem_ptr_t &ptr) {
+    int src_addr = env.get_offset(ptr.src);
+    std::string ret = "";
+    int addr = env.get_offset(current_inst);
+    if(ptr.src->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
+        // la t0 arr
+        ret += "\tla t0, " + std::string(ptr.src->name + 1) + "\n";
+    } else  {
+        // addi t0, sp, 4
+        assert(src_addr != -1);
+        if(src_addr < 2048 && src_addr >= -2048) {
+            ret += "\taddi t0, sp, " + std::to_string(src_addr) + "\n";
+        } else {
+            ret += "\tli t3, " + std::to_string(src_addr) + "\n";
+            ret += "\tadd t0, sp, t3\n";
+        }
+    } 
+    // li t1, 1
+    // li t2, 4
+    // mul t1, t1, t2
+    // # 计算 getelemptr 的结果
+    // add t0, t0, t1
+    // # 保存结果到栈帧
+    // sw t0 
+  
+    ret += reg_load(ptr.index, "t1");
+    // int size = array_size_cal(ptr.src->ty->data.pointer.base->data.array.base);
+    int size = 4;
+    koopa_raw_value_t src = ptr.src;
+    int i = 0;
+    while(src->ty->tag != KOOPA_RTT_POINTER){
+        src = src->kind.data.get_elem_ptr.src;
+        i += 1;
+    }
+    assert(src->ty->tag == KOOPA_RTT_POINTER);
+    std::vector<int> index_vec;
+    koopa_raw_type_t ty = src->ty->data.pointer.base;
+    while(ty->tag != KOOPA_RTT_ARRAY) {
+        index_vec.push_back(ty->data.array.len);
+    }
+    if(index_vec.size() == 0)
+        size = 4;
+    else {
+        for (int j = 0; j < i; j++)
+        {
+            size *= index_vec[index_vec.size() - 1 -j];
+        }
+    }
+    
+    // std::cout << std::to_string(size) << std::endl;
+    ret += "\tli t2, " + std::to_string(size) + "\n";
+    ret += "\tmul t1, t1, t2\n";
+    ret += "\tadd t0, t0, t1\n";
+    ret += store_offset(addr, "t0");
+    return ret;
+}
+
+std::string BaseRSICV::Visit(const koopa_raw_get_ptr_t &ptr) {
+    std::string ret = "";
+    int addr = env.get_offset(current_inst);
+    if(ptr.src->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
+        // la t0 arr
+        ret += "\tla t0, " + std::string(ptr.src->name + 1) + "\n";
+    } else {
+        // addi t0, sp, 4
+        int src_addr = env.get_offset(ptr.src);
+        assert(src_addr != -1);
+        if(src_addr < 2048 && src_addr >= -2048) {
+            ret += "\taddi t0, sp, " + std::to_string(src_addr) + "\n";
+        } else {
+            ret += "\tli t3, " + std::to_string(src_addr) + "\n";
+            ret += "\tadd t0, sp, t3\n";
+        }
+    }
+    // li t1, 1
+    // li t2, 4
+    // mul t1, t1, t2
+    // # 计算 getelemptr 的结果
+    // add t0, t0, t1
+    // # 保存结果到栈帧
+    // sw t0 
+  
+    ret += reg_load(ptr.index, "t1");
+    int size = array_size_cal(ptr.src->ty->data.pointer.base);
+    ret += "\tli t2, " + std::to_string(size) + "\n";
+    ret += "\tmul t1, t1, t2\n";
+    ret += "\tadd t0, t0, t1\n";
+    ret += store_offset(addr, "t0");
+    return ret;
+}
+
+std::string BaseRSICV::Visit(const koopa_raw_aggregate_t &aggr) {
+    // is called by global value
+    std::string ret = "";
+    for(int i = 0; i < aggr.elems.len; i++) {
+        auto ptr = aggr.elems.buffer[i];
+        koopa_raw_value_t value = reinterpret_cast<koopa_raw_value_t>(ptr);
+        if(value->kind.tag == KOOPA_RVT_INTEGER)
+            ret += "\t.word " + std::to_string(value->kind.data.integer.value) + "\n";
+        else if(value->kind.tag == KOOPA_RVT_AGGREGATE)
+            ret += Visit(value->kind.data.aggregate);
+        else
+            assert(false);
+    }
     return ret;
 }
